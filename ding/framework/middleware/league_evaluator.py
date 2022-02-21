@@ -65,7 +65,11 @@ def league_evaluator(
                 instance_name='fixed_evaluator'
             )
 
-        nonlocal learn_session
+        while True:
+            nonlocal learn_session
+            if learn_session:
+                break
+            time.sleep(0.01)
 
         if ctx.total_step == 0:
             train_iter = 0
@@ -80,12 +84,6 @@ def league_evaluator(
             stop_flag1, reward, episode_info = evaluator1.eval(None, train_iter, learn_session["envstep"])
             win_loss_result = [e['result'] for e in episode_info[0]]
 
-            task.emit("win_loss_result", win_loss_result)
-            # TODO Handle these events in league
-            # # set fixed NE policy trueskill(exposure) equal 10
-            # main_player.rating = league.metric_env.rate_1vsC(
-            #     main_player.rating, league.metric_env.create_rating(mu=10, sigma=1e-8), win_loss_result
-            # )
-            # tb_logger.add_scalar('fixed_evaluator_step/reward_mean', reward, learn_session["envstep"])
+            task.emit("win_loss_result", "main_player", win_loss_result)
 
     return _evaluate

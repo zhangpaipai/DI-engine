@@ -28,6 +28,14 @@ def league_dispatcher(task: "Task", cfg: dict, tb_logger: "DistributedWriter", l
 
     task.on("learner_online", learner_online)
 
+    def win_loss_result(player_id, result):
+        player = online_learners[player_id]
+        player.rating = league.metric_env.rate_1vsC(
+            player.rating, league.metric_env.create_rating(mu=10, sigma=1e-8), result
+        )
+
+    task.on("win_loss_result", win_loss_result)
+
     def _league(ctx: "Context"):
         print("Waiting for all learners online")
         while True:
