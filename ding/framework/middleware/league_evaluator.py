@@ -35,7 +35,6 @@ def league_evaluator(
     learn_session = None
 
     def set_learn_session(remote_learn_session):
-        print("get set_learn_session", remote_learn_session)
         if "main_player" in remote_learn_session["player_id"]:
             nonlocal learn_session
             learn_session = remote_learn_session

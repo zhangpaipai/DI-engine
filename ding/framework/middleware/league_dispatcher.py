@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from ding.league.base_league import BaseLeague
 
 
-def league_dispatcher(task: "Task", cfg: dict, tb_logger: "DistributedWriter", league: "BaseLeague", policies: dict):
+def league_dispatcher(task: "Task", league: "BaseLeague", policies: dict):
 
     def update_active_player(player_info):
         league.update_active_player(player_info)
@@ -21,7 +21,6 @@ def league_dispatcher(task: "Task", cfg: dict, tb_logger: "DistributedWriter", l
         online_learners[player_id] = False
 
     def learner_online(player_id):
-        print("Get learner", player_id)
         online_learners[player_id] = True
 
     task.on("learner_online", learner_online)

@@ -104,7 +104,7 @@ class Parallel(metaclass=SingletonMetaclass):
                 - main_process (:obj:`Callable`): The main function, your program start from here.
             """
             nodes = Parallel.get_node_addrs(n_parallel_workers, protocol=protocol, address=address, ports=ports)
-            logging.warning("Bind subprocesses on these addresses: {}".format(nodes))
+            logging.info("Bind subprocesses on these addresses: {}".format(nodes))
 
             def cleanup_nodes():
                 for node in nodes:

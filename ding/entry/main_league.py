@@ -51,16 +51,12 @@ def main():
         torch.save(policies[player_id].collect_mode.state_dict(), player_ckpt_path)
         league.judge_snapshot(player_id, force=True)
 
-    model = VAC(**cfg.policy.model)
-    policy = PPOPolicy(cfg.policy, model=model)
-    policies['historical'] = policy
-
-    with Task(async_mode=True, n_async_workers=3, auto_sync_ctx=False) as task:
+    with Task(async_mode=True, n_async_workers=3) as task:
         if not task.router.is_active:
             logging.info("League should be executed in parallel mode, use `main_league.sh` to execute league!")
             exit(1)
         if task.match_labels(["league"]):
-            task.use(league_dispatcher(task, cfg=cfg, tb_logger=tb_logger, league=league, policies=policies))
+            task.use(league_dispatcher(task, league=league, policies=policies))
         if task.match_labels(["collect"]):
             task.use(league_collector(task, cfg=cfg, tb_logger=tb_logger, player_ids=league.active_players_ids))
         if task.match_labels(["learn"]):
