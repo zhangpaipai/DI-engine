@@ -1,8 +1,6 @@
 import torch
 import time
 from typing import TYPE_CHECKING
-
-from ding.league import player
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.utils import DistributedWriter

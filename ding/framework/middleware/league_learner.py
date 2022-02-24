@@ -1,3 +1,4 @@
+from time import sleep
 import torch
 from ding.worker.learner.base_learner import BaseLearner
 from typing import TYPE_CHECKING, List
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
 def league_learner(task: "Task", cfg: dict, tb_logger: "DistributedWriter", player_id: str, policies: List[str]):
     learner = None
 
+    sleep(1)
     task.emit("learner_online", player_id)
 
     def _learn(ctx: "Context"):
