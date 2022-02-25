@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Generator, Iterable, List, Optional
 from ding.framework.context import Context
 from ding.framework.parallel import Parallel
 from ding.framework.event_loop import EventLoop
+from ding.framework.stream import Stream
 from functools import wraps
 
 
@@ -377,6 +378,20 @@ class Task:
             return result
         else:
             raise TimeoutError("Timeout when waiting for event: {}".format(event))
+
+    def stream(self, event: str, buffer_size: int = 1) -> Stream:
+        """
+        Overview:
+            Combining events and streams, the data from the events will be fed to the stream buffer for later use.
+        Arguments:
+            - event (:obj:`str`): Event name.
+            - buffer_size (:obj:`int`): Buffer size of stream.
+        Returns:
+            - stm (:obj:`Stream`): Stream instance.
+        """
+        stm = Stream(buffer_size=buffer_size)
+        self.on(event, lambda data: stm.put(data))
+        return stm
 
     def __copy__(self):
         return Task(**self.__dict__)

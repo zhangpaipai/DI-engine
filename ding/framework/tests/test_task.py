@@ -239,3 +239,15 @@ def early_stop_main():
 @pytest.mark.unittest
 def test_early_stop():
     Parallel.runner(n_parallel_workers=2)(early_stop_main)
+
+
+@pytest.mark.unittest
+def test_stream():
+    with Task() as task:
+        stm_data = task.stream("data")
+        assert stm_data.last is None
+        for i in range(3):
+            task.emit("data", i)
+        time.sleep(0.1)
+        assert stm_data.last == 2
+        assert len(stm_data.all) == 1

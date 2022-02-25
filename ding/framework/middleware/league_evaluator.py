@@ -34,6 +34,8 @@ def league_evaluator(
     evaluator_env1, eval_policy1, evaluator1 = None, None, None
     learn_session = None
 
+    # learn_session = task.stream("set_learn_session").filter(lambda data: "main_player" in data)
+
     def set_learn_session(remote_learn_session):
         if "main_player" in remote_learn_session["player_id"]:
             nonlocal learn_session
