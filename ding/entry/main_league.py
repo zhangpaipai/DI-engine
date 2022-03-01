@@ -1,3 +1,4 @@
+from socket import timeout
 from ding.framework import Task
 import logging
 import os
@@ -12,7 +13,8 @@ from ding.utils import set_pkg_seed
 from dizoo.league_demo.demo_league import DemoLeague
 from dizoo.league_demo.league_demo_ppo_config import league_demo_ppo_config
 from ding.utils import DistributedWriter
-from ding.framework.middleware import league_learner, league_evaluator, league_dispatcher, league_collector
+from ding.framework.middleware import league_learner, league_evaluator, league_dispatcher
+from ding.framework.middleware import league_collector, pace_controller
 
 
 def main():
@@ -35,30 +37,19 @@ def main():
         policy = PPOPolicy(cfg.policy, model=model)
         policies[player_id] = policy
 
-    # set load_checkpoint_fn in league, add a random policy player as reset player
-    def load_checkpoint_fn(player_id: str, ckpt_path: str):
-        state_dict = torch.load(ckpt_path)
-        policies[player_id].learn_mode.load_state_dict(state_dict)
-
     model = VAC(**cfg.policy.model)
     policy = PPOPolicy(cfg.policy, model=model)
-    policies['historical'] = policy
-    torch.save(policies['historical'].learn_mode.state_dict(), league.reset_checkpoint_path)
-    league.load_checkpoint = load_checkpoint_fn
 
-    # snapshot the initial player as the first historial player
-    for player_id, player_ckpt_path in zip(league.active_players_ids, league.active_players_ckpts):
-        torch.save(policies[player_id].collect_mode.state_dict(), player_ckpt_path)
-        league.judge_snapshot(player_id, force=True)
-
-    with Task(async_mode=True, n_async_workers=3) as task:
+    with Task(async_mode=False) as task:
         if not task.router.is_active:
             logging.info("League should be executed in parallel mode, use `main_league.sh` to execute league!")
             exit(1)
-        if task.match_labels(["league"]):
+        # League, collect
+        if task.match_labels(["league", "collect"]):
             task.use(league_dispatcher(task, league=league, policies=policies))
-        if task.match_labels(["collect"]):
-            task.use(league_collector(task, cfg=cfg, tb_logger=tb_logger, player_ids=league.active_players_ids))
+            task.use(league_collector(task, cfg=cfg, tb_logger=tb_logger, policies=policies))
+            task.use(pace_controller(task, theme="league", identity="collect", timeout=5))
+        # Learn
         if task.match_labels(["learn"]):
             # Distribute learners on different nodes
             player_idx = task.router.node_id % len(league.active_players_ids)
@@ -71,6 +62,8 @@ def main():
                     policies=policies
                 )
             )
+            task.use(pace_controller(task, theme="league", identity="learn", timeout=5))
+        # Evaluate
         if task.match_labels(["evaluate"]):
             task.use(
                 league_evaluator(

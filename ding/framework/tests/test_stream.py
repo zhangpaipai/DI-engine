@@ -11,3 +11,6 @@ def test_stream():
 
     assert stm.last == 5
     assert len(stm.all) == 2
+
+    stm.clear()
+    assert len(stm.all) == 0

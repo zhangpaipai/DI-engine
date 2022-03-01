@@ -1,3 +1,4 @@
+import logging
 from typing import TYPE_CHECKING, Callable
 import time
 import math
@@ -51,8 +52,8 @@ def pace_controller(
             task.emit(event_theme, identity, only_remote=True)
             time_begin = time.time()
             while not event_received and not task.finish:
-                time.sleep(0.01)
                 if (time.time() - time_begin) > timeout:
+                    logging.warning("Time out on pace controller! Theme: {}, identity: {}".format(theme, identity))
                     break
             event_received = False
         return

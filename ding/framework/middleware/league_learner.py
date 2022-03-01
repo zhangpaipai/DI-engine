@@ -1,5 +1,5 @@
+import logging
 from time import sleep
-import torch
 from ding.worker.learner.base_learner import BaseLearner
 from typing import TYPE_CHECKING, List
 if TYPE_CHECKING:
@@ -8,38 +8,47 @@ if TYPE_CHECKING:
 
 
 def league_learner(task: "Task", cfg: dict, tb_logger: "DistributedWriter", player_id: str, policies: List[str]):
-    learner = None
+    policy = policies[player_id]
+    learner = BaseLearner(
+        cfg.policy.learn.learner,
+        policy.learn_mode,
+        tb_logger=tb_logger,
+        exp_name=cfg.exp_name,
+        instance_name=player_id + '_learner'
+    )
 
-    sleep(1)
-    task.emit("learner_online", player_id)
+    collect_stm = task.stream("collect_output")\
+        .filter(lambda data: data["job"]["launch_player"] == player_id)
 
     def _learn(ctx: "Context"):
-        learn_session = task.wait_for("set_learn_session")[0][0]
-        print("    Learning on node: {}, player: {}".format(task.router.node_id, player_id))
-        if learn_session["player_id"] != player_id:
-            return
+        while True:
+            # if collect_stm.last:
+            #     collect_output = collect_stm.last
+            #     collect_stm.clear()
+            #     break
+            # else:
+            #     sleep(0.01)
+            collect_output = task.wait_for("collect_output")[0][0]
+            job = collect_output["job"]
+            if job["launch_player"] == player_id:
+                break
 
-        nonlocal learner
-        if not learner:
-            policy = policies[player_id]
-            learner = BaseLearner(
-                cfg.policy.learn.learner,
-                policy.learn_mode,
-                tb_logger=tb_logger,
-                exp_name=cfg.exp_name,
-                instance_name=player_id + '_learner'
-            )
+        logging.info("Learning on node: {}, player: {}".format(task.router.node_id, player_id))
+        train_data, env_step = collect_output["train_data"], collect_output["env_step"]
 
         for _ in range(cfg.policy.learn.update_per_collect):
-            learner.train(learn_session["train_data"], learn_session["envstep"])
+            learner.train(train_data, env_step)
 
         state_dict = learner.policy.state_dict()
-        torch.save(state_dict, learn_session["player_ckpt_path"])  # Save to local
 
-        player_info = learner.learn_info
-        player_info['player_id'] = learn_session["player_id"]
-        player_info["train_iter"] = learner.train_iter
+        learn_output = {
+            "player_info": learner.learn_info,
+            "player_id": player_id,
+            "train_iter": learner.train_iter,
+            "state_dict": state_dict
+        }
 
-        task.emit("update_active_player", player_info)  # Broadcast to other middleware
+        sleep(1)
+        task.emit("learn_output", learn_output)  # Broadcast to other middleware
 
     return _learn

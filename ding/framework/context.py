@@ -30,3 +30,15 @@ class Context(dict):
         """
         for key in keys:
             self._kept_keys.add(key)
+
+
+class LeagueContext(Context):
+    """
+    Overview:
+        Add job property on context
+    """
+
+    def __init__(self, total_step: int = 0, *args, **kwargs) -> None:
+        super().__init__(total_step, *args, **kwargs)
+        self.job = None
+        self.episode_info = None

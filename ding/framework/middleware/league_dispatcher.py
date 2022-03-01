@@ -1,19 +1,22 @@
-import torch
-import time
+import logging
+import random
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ding.framework import Task, Context
-    from ding.utils import DistributedWriter
+    from ding.framework import Task, LeagueContext
     from ding.league.base_league import BaseLeague
 
 
 def league_dispatcher(task: "Task", league: "BaseLeague", policies: dict):
 
-    def update_active_player(player_info):
+    def update_learn_output(learn_output):
+        logging.info("Get lern output {}".format(learn_output["player_info"]))
+        player_info, player_id, state_dict = learn_output["player_info"], learn_output["player_id"], learn_output[
+            "state_dict"]
+        policies[player_id]._model.load_state_dict(state_dict)
         league.update_active_player(player_info)
-        league.judge_snapshot(player_info["player_id"])
+        league.judge_snapshot(player_id)
 
-    task.on("update_active_player", update_active_player)
+    task.on("learn_output", update_learn_output)
 
     # Wait for all players online
     online_learners = {}
@@ -33,36 +36,28 @@ def league_dispatcher(task: "Task", league: "BaseLeague", policies: dict):
 
     task.on("win_loss_result", win_loss_result)
 
-    def _league(ctx: "Context"):
-        print("Waiting for all learners online")
-        while True:
-            if all(online_learners.values()):
-                break
-            time.sleep(0.1)
-        print("League dispatching on node {}".format(task.router.node_id))
-        # One episode each round
-        i = ctx.total_step % len(league.active_players_ids)
-        player_id, player_ckpt_path = league.active_players_ids[i], league.active_players_ckpts[i]
+    def _league(ctx: "LeagueContext"):
+        logging.info("League dispatching on node {}".format(task.router.node_id))
+        # Random pick a player
+        i = random.choice(range(len(league.active_players_ids)))
+        player_id = league.active_players_ids[i]
 
+        # Get players of both side
         job = league.get_job_info(player_id)
-        opponent_player_id = job['player_id'][1]
+        # Job example
+        # {
+        #     'agent_num': 2,
+        #     'launch_player': 'main_exploiter_default_0',
+        #     'player_id': ['main_exploiter_default_0', 'main_player_default_0'],
+        #     'checkpoint_path': [
+        #         'league_demo_ppo/policy/main_exploiter_default_0_ckpt.pth',
+        #         'league_demo_ppo/policy/main_player_default_0_ckpt.pth'
+        #     ],
+        #     'player_active_flag': [True, True]
+        # }
+        logging.info("Job: {}".format(job))
 
-        if 'historical' in opponent_player_id:
-            opponent_policy = policies['historical'].collect_mode
-            opponent_path = job['checkpoint_path'][1]
-            opponent_policy.load_state_dict(torch.load(opponent_path, map_location='cpu'))
-        else:
-            opponent_policy = policies[opponent_player_id].collect_mode
-        # Watch out that in parallel mode, we should not send functions between processes, instead,
-        # we should send the objects needed by the policies.
-        collect_session = {
-            "policies": [policies[player_id].collect_mode, opponent_policy],
-            "player_id": player_id,
-            "player_ckpt_path": player_ckpt_path
-        }
-        print("Player ID", collect_session["player_id"])
-
-        task.emit("set_collect_session", collect_session, only_local=True)
+        ctx.job = job
 
         yield
 

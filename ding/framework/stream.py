@@ -39,6 +39,16 @@ class Stream:
         self._filter = fn
         return self
 
+    def clear(self) -> "Stream":
+        """
+        Overview:
+            Clear data in the queue.
+        Returns:
+            - self (:obj:`Stream`): Self stream instance.
+        """
+        self._queue.clear()
+        return self
+
     @property
     def last(self) -> Any:
         """
