@@ -48,16 +48,15 @@ league_demo_ppo_config = dict(
             league=dict(
                 player_category=['default'],
                 path_policy="league_demo_ppo/policy",
-                active_players=dict(
-                    main_player=1,
-                    main_exploiter=1,
-                    league_exploiter=1,
-                ),
+                active_players=dict(main_player=2,
+                                    # main_exploiter=1,
+                                    # league_exploiter=1,
+                                    ),
                 main_player=dict(
                     one_phase_step=200,
                     branch_probs=dict(
-                        pfsp=0.5,
-                        sp=0.5,
+                        pfsp=0.0,
+                        sp=1.0,
                     ),
                     strong_win_rate=0.7,
                 ),

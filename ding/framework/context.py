@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+
+
 class Context(dict):
     """
     Overview:
@@ -10,7 +13,10 @@ class Context(dict):
         super().__init__(*args, **kwargs)
         self.__dict__ = self
         self.total_step = total_step
-        self._kept_keys = set()
+        self.env_step = 0
+        self.train_iter = 0
+        self.train_data = None
+        self._kept_keys = {"total_step", "env_step", "train_iter"}
 
     def renew(self) -> 'Context':  # noqa
         """
@@ -42,3 +48,4 @@ class LeagueContext(Context):
         super().__init__(total_step, *args, **kwargs)
         self.job = None
         self.episode_info = None
+        self.player_info = None

@@ -40,7 +40,7 @@ ditask --package $BASEDIR \
 
 ditask --package $BASEDIR \
   --main main_league.main \
-  --parallel-workers 3 \
+  --parallel-workers 2 \
   --protocol tcp \
   --address 127.0.0.1 \
   --ports 50525 \

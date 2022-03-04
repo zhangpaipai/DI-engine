@@ -9,7 +9,9 @@ if TYPE_CHECKING:
     from ding.utils.log_writer_helper import DistributedWriter
 
 
-def league_collector(task: "Task", cfg: dict, tb_logger: "DistributedWriter", policies: dict):
+def league_collector(
+    task: "Task", cfg: dict, tb_logger: "DistributedWriter", policies: dict, is_executor: bool = False
+):
     player_ids = list(policies.keys())
     collectors = {}
     for player_id in player_ids:
@@ -44,7 +46,7 @@ def league_collector(task: "Task", cfg: dict, tb_logger: "DistributedWriter", po
         for d in train_data:
             d['adv'] = d['reward']
 
-        collect_output = {"job": job, "train_data": train_data, "env_step": collector.envstep}
-        task.emit("collect_output", collect_output)  # Shoot and forget
+        ctx.train_data = train_data
+        ctx.env_step = collector.envstep
 
     return _collect
