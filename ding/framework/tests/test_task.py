@@ -251,3 +251,25 @@ def test_stream():
         time.sleep(0.1)
         assert stm_data.last == 2
         assert len(stm_data.all) == 1
+
+
+def test_register_events():
+
+    class Counter:
+
+        def __init__(self) -> None:
+            self.n = 0
+
+        def on_count(self, count):
+            self.n += count
+
+        def __call__(self, ctx):
+            time.sleep(0.01)
+
+    counter = Counter()
+    with Task() as task:
+        task.use(lambda ctx: task.emit("count", 1))
+        task.use(counter)
+        task.run(10)
+
+    assert counter.n == 10

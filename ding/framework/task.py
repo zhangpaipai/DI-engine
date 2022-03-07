@@ -108,15 +108,16 @@ class Task:
         else:
             self.labels.add("standalone")
 
-    def use(self, fn: Callable, filter_labels: Optional[Iterable[str]] = None) -> 'Task':
+    def use(self, mw: Callable, filter_labels: Optional[Iterable[str]] = None) -> 'Task':
         """
         Overview:
             Register middleware to task. The middleware will be executed by it's registry order.
         Arguments:
-            - fn (:obj:`Callable`): A middleware is a function with only one argument: ctx.
+            - mw (:obj:`Callable`): A middleware is a function with only one argument: ctx.
         """
         if not filter_labels or self.match_labels(filter_labels):
-            self.middleware.append(fn)
+            self._register_events(mw)
+            self.middleware.append(mw)
         return self
 
     def use_step_wrapper(self, fn: Callable) -> 'Task':
@@ -415,3 +416,18 @@ class Task:
             - event (:obj:`str`): Event name
         """
         return "task.{}".format(event)
+
+    def _register_events(self, mw: Callable) -> None:
+        """
+        Overview:
+            Check the method name of the middleware, when the method name starts with `on_`, \
+                register it as an event callback.
+        Arguments:
+            - mw (:obj:`Callable`): The callable middleware.
+        """
+        for method_name in dir(mw):
+            if method_name.startswith("on_"):
+                event_name = method_name[3:]
+                fn = getattr(mw, method_name)
+                if isinstance(fn, Callable):
+                    self.on(event_name, fn)
