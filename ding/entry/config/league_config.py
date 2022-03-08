@@ -46,7 +46,7 @@ demo_config = dict(
         other=dict(
             league=dict(
                 player_category=['default'],
-                path_policy="league_demo_ppo/policy",
+                path_policy="league_demo/policy",
                 active_players=dict(main_player=2,
                                     # main_exploiter=1,
                                     # league_exploiter=1,
