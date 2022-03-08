@@ -155,8 +155,8 @@ class BaseLeague:
         player_meta = PlayerMeta(player_id=player_id, checkpoint=FileStorage(path=player.checkpoint_path))
         player_job_info = player.get_job()
         opponent_player_meta = PlayerMeta(
-            player_id=player_job_info.opponent.player_id,
-            checkpoint=FileStorage(path=player_job_info.opponent.checkpoint_path)
+            player_id=player_job_info["opponent"].player_id,
+            checkpoint=FileStorage(path=player_job_info["opponent"].checkpoint_path)
         )
         job = Job(job_id=str(uuid.uuid1()), launch_player=player_id, players=[player_meta, opponent_player_meta])
         return job

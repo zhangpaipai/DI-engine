@@ -253,6 +253,7 @@ def test_stream():
         assert len(stm_data.all) == 1
 
 
+@pytest.mark.unittest
 def test_register_events():
 
     class Counter:

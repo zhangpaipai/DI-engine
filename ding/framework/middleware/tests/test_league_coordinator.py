@@ -58,14 +58,20 @@ def test_league_coordinator():
 
     with Task(async_mode=True) as task:
         coordinator = LeagueCoordinator(task, cfg=cfg, league=league)
-
-        def start_actors(ctx):
-            for i in range(2):
-                task.emit("greet_actor", i)
-            sleep(0.3)
-            assert len(coordinator._actor_jobs) == 2
-            task.finish = True
-
         task.use(coordinator)
-        task.use(start_actors)
-        task.run(max_step=1)
+
+        jobs = []
+
+        def get_job(job):
+            print("Get job", job)
+            jobs.append(job)
+
+        for i in range(2):
+            task.on("job_actor_{}".format(i), get_job)
+
+        # When we send greet messages when the coordinator is registered but not executed,
+        # two idle actors will be detected.
+        for i in range(2):
+            task.emit("greet_actor", i)
+        sleep(0.3)
+        assert len(jobs) == 2
