@@ -7,3 +7,5 @@ from .basic_collector import basic_collector
 from .basic_learner import basic_learner
 from .basic_evaluator import basic_evaluator
 from .sync_context import sync_context
+from .league_actor import LeagueActor
+from .league_coordinator import LeagueCoordinator

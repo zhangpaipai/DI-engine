@@ -1,7 +1,6 @@
 from easydict import EasyDict
-from torch.nn.modules.activation import Threshold
 
-league_demo_ppo_config = dict(
+demo_config = dict(
     exp_name="league_demo_ppo",
     env=dict(
         collector_env_num=8,
@@ -91,5 +90,5 @@ league_demo_ppo_config = dict(
     ),
     task=dict(workers=dict(league_coordinator=1, league_actor=2, league_learner=3))
 )
-league_demo_ppo_config = EasyDict(league_demo_ppo_config)
-league_demo_ppo_create_config = EasyDict({})
+demo_config = EasyDict(demo_config)
+demo_create_config = EasyDict({})
