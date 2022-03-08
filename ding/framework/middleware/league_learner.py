@@ -31,3 +31,7 @@ def league_learner(task: "Task", cfg: dict, tb_logger: "DistributedWriter", play
         ctx.player_info['player_id'] = player_id
 
     return _learn
+
+
+class LeagueLearner:
+    pass

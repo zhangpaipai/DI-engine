@@ -1,7 +1,7 @@
 from easydict import EasyDict
 
-demo_config = dict(
-    exp_name="league_demo_ppo",
+league_config = dict(
+    exp_name="league_demo",
     env=dict(
         collector_env_num=8,
         evaluator_env_num=10,
@@ -90,5 +90,5 @@ demo_config = dict(
     ),
     task=dict(workers=dict(league_coordinator=1, league_actor=2, league_learner=3))
 )
-demo_config = EasyDict(demo_config)
-demo_create_config = EasyDict({})
+league_config = EasyDict(league_config)
+league_create_config = EasyDict({})

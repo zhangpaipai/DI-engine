@@ -1,10 +1,7 @@
 from dataclasses import dataclass, field
-import logging
 from typing import List
 import uuid
 import copy
-import os
-from abc import abstractmethod
 from easydict import EasyDict
 import os.path as osp
 from ding.framework.storage.file import FileStorage
@@ -25,9 +22,10 @@ class PlayerMeta:
 @dataclass
 class Job:
     job_id: str
-    launch_player: PlayerMeta
+    launch_player: str
     players: List[PlayerMeta]
     result: list = field(default_factory=list)
+    train_iter: int = None
 
 
 class BaseLeague:
@@ -107,9 +105,8 @@ class BaseLeague:
             for k, n in self.cfg.active_players.items():  # Active player's type
                 for i in range(n):  # This type's active player number
                     name = '{}_{}_{}'.format(k, cate, i)
-                    ckpt_path = osp.join(self.path_policy, '{}_ckpt.pth'.format(name))
                     player = create_player(
-                        self.cfg, k, self.cfg[k], cate, self.payoff, ckpt_path, name, 0, self.metric_env.create_rating()
+                        self.cfg, k, self.cfg[k], cate, self.payoff, None, name, 0, self.metric_env.create_rating()
                     )
                     self.active_players.append(player)
                     self.payoff.add_player(player)
@@ -140,7 +137,7 @@ class BaseLeague:
         # Validate active players are unique by ``player_id``.
         assert len(self.active_players_ids) == len(set(self.active_players_ids))
 
-    def get_job_info(self, player_id: str = None) -> dict:
+    def get_job_info(self, player_id: str = None) -> Job:
         """
         Overview:
             Get info dict of the job which is to be launched to an active player.
@@ -161,10 +158,10 @@ class BaseLeague:
             player_id=player_job_info.opponent.player_id,
             checkpoint=FileStorage(path=player_job_info.opponent.checkpoint_path)
         )
-        job = Job(job_id=str(uuid.uuid1()), launch_player=player_meta, players=[player_meta, opponent_player_meta])
+        job = Job(job_id=str(uuid.uuid1()), launch_player=player_id, players=[player_meta, opponent_player_meta])
         return job
 
-    def create_historical_player(self, player_id: str, force: bool = False) -> bool:
+    def create_historical_player(self, player_id: str, checkpoint_path: str = None, force: bool = False) -> None:
         """
         Overview:
             Judge whether a player is trained enough for snapshot. If yes, call player's ``snapshot``, create a
@@ -172,59 +169,28 @@ class BaseLeague:
             Otherwise, return False.
         Arguments:
             - player_id (:obj:`ActivePlayer`): The active player's id.
-        Returns:
-            - snapshot_or_not (:obj:`dict`): Whether the active player is snapshotted.
         """
         idx = self.active_players_ids.index(player_id)
         player = self.active_players[idx]
         if force or player.is_trained_enough():
             # Snapshot
             hp = player.snapshot(self.metric_env)
+            hp._checkpoint_path = checkpoint_path  # Don't create checkpoint path in league
             self.historical_players.append(hp)
             self.payoff.add_player(hp)
-            # Mutate
-            self._mutate_player(player)
-            return True
-        else:
-            return False
 
-    @abstractmethod
-    def _mutate_player(self, player: ActivePlayer) -> None:
-        """
-        Overview:
-            Players have the probability to mutate, e.g. Reset network parameters.
-            Called by ``self.judge_snapshot``.
-        Arguments:
-            - player (:obj:`ActivePlayer`): The active player that may mutate.
-        """
-        raise NotImplementedError
-
-    def update_active_player(self, player_info: dict) -> None:
+    def update_active_player(self, player_id: str, train_iter: int) -> None:
         """
         Overview:
             Update an active player's info.
         Arguments:
-            - player_info (:obj:`dict`): Info dict of the player which is to be updated.
-        ArgumentsKeys:
-            - necessary: `player_id`, `train_iteration`
+            - player_id (:obj:`str`): Player id.
+            - train_iter (:obj:`int`): Train iteration.
         """
-        try:
-            idx = self.active_players_ids.index(player_info['player_id'])
-            player = self.active_players[idx]
-            return self._update_player(player, player_info)
-        except ValueError as e:
-            logging.error(e)
-
-    @abstractmethod
-    def _update_player(self, player: ActivePlayer, player_info: dict) -> None:
-        """
-        Overview:
-            Update an active player. Called by ``self.update_active_player``.
-        Arguments:
-            - player (:obj:`ActivePlayer`): The active player that will be updated.
-            - player_info (:obj:`dict`): Info dict of the active player which is to be updated.
-        """
-        raise NotImplementedError
+        idx = self.active_players_ids.index(player_id)
+        player = self.active_players[idx]
+        if isinstance(player, ActivePlayer):
+            player.total_agent_step = train_iter
 
     def update_payoff(self, job: Job) -> None:
         """
@@ -234,7 +200,7 @@ class BaseLeague:
             - job_info (:obj:`dict`): A dict containing job result information.
         """
         job_info = {
-            "launch_player": job.launch_player.player_id,
+            "launch_player": job.launch_player,
             "player_id": list(map(lambda p: p.player_id, job.players)),
             "result": job.result
         }
