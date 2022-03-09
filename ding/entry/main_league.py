@@ -13,6 +13,7 @@ from ding.utils import set_pkg_seed
 from ding.league.v2 import BaseLeague
 from ding.config.example.league_config import league_config
 from ding.utils import DistributedWriter
+from dizoo.league_demo.game_env import GameEnv
 from ding.framework.middleware import LeagueCoordinator, LeagueActor, LeagueLearner
 from rich import print
 
@@ -28,9 +29,11 @@ def main():
         NaiveReplayBuffer,
         save_cfg=True
     )
+    set_pkg_seed(cfg.seed, use_cuda=cfg.policy.cuda)
+    from rich import print
     print(cfg)
     exit()
-    set_pkg_seed(0, use_cuda=cfg.policy.cuda)
+
     # policies = {}
     # for player_id in league.active_players_ids:
     #     model = VAC(**cfg.policy.model)
@@ -39,6 +42,13 @@ def main():
     # # model = VAC(**cfg.policy.model)
     # policy = PPOPolicy(cfg.policy, model=model)
     # policies['historical'] = policy
+    def env_fn():
+        return GameEnv(cfg.env.env_type)
+
+    def policy_fn():
+        model = VAC(**cfg.policy.model)
+        policy = PPOPolicy(cfg.policy, model=model)
+        return policy
 
     with Task(async_mode=False) as task:
         if not task.router.is_active:
@@ -51,33 +61,11 @@ def main():
                 if worker == "league_coordinator":
                     task.use(LeagueCoordinator(task, cfg=cfg, league=league))
                 elif worker == "league_actor":
-                    task.use(LeagueActor())
+                    task.use(LeagueActor(task, cfg=cfg, env_fn=env_fn, policy_fn=policy_fn))
                 elif worker == "league_learner":
                     task.use(LeagueLearner())
                 else:
                     raise ValueError("Undefined worker type: {}".format(worker))
-
-        # # League, collect
-        # task.use(league_dispatcher(task, league=league, is_executor=task.match_labels(["league"])))
-        # task.use(
-        #     league_collector(
-        #         task, cfg=cfg, tb_logger=tb_logger, policies=policies, is_executor=task.match_labels(["collect"])
-        #     )
-        # )
-        # for i, player_id in enumerate(league.active_players_ids):
-        #     is_executor = task.match_labels("learn") and task.router.node_id % len(league.active_players_ids) == i
-        #     task.use(
-        #         league_learner(
-        #             task, cfg=cfg, tb_logger=tb_logger, player_id=player_id, policies=policies, is_executor=is_executor
-        #         )
-        #     )
-        # # Evaluate
-        # if task.match_labels(["evaluate"]):
-        #     task.use(
-        #         league_evaluator(
-        #             task, cfg=cfg, tb_logger=tb_logger, player_ids=league.active_players_ids, policies=policies
-        #         )
-        #     )
         task.run(100)
 
 

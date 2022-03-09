@@ -2,57 +2,19 @@ from copy import deepcopy
 from time import sleep
 from typing import List
 from unittest.mock import patch
+from ding.framework.middleware.tests.league_config import cfg
 import pytest
-from rx import return_value
-
 from ding.framework.middleware.league_coordinator import LeagueCoordinator
 from ding.framework.task import Task
-from easydict import EasyDict
 from ding.league.shared_payoff import BattleSharedPayoff
 
 from ding.league.v2.base_league import BaseLeague, Job
 
 
 def mock_cfg_league():
-    cfg = EasyDict(
-        {
-            'league': {
-                'player_category': ['default'],
-                'path_policy': 'league_demo/policy',
-                'active_players': {
-                    'main_player': 2
-                },
-                'main_player': {
-                    'one_phase_step': 200,
-                    'branch_probs': {
-                        'pfsp': 0.0,
-                        'sp': 1.0
-                    },
-                    'strong_win_rate': 0.7
-                },
-                'payoff': {
-                    'type': 'battle',
-                    'decay': 0.99,
-                    'min_win_rate_games': 8
-                },
-                'metric': {
-                    'mu': 0,
-                    'sigma': 8.333333333333334,
-                    'beta': 4.166666666666667,
-                    'tau': 0.0,
-                    'draw_probability': 0.02
-                }
-            },
-            'task': {
-                'workers': {
-                    'league_coordinator': 1,
-                    'league_actor': 2,
-                    'league_learner': 3
-                }
-            }
-        }
-    )
-    league = BaseLeague(cfg.league)
+    global cfg
+    cfg = deepcopy(cfg)
+    league = BaseLeague(cfg.policy.other.league)
     return cfg, league
 
 
@@ -66,7 +28,7 @@ def test_league_coordinator():
 
         jobs: List[Job] = []
 
-        def test_greeting():
+        def test_actor_greeting():
             """
             When we send greet messages to the coordinator,
             two jobs will be distributed by it.
@@ -76,7 +38,7 @@ def test_league_coordinator():
                 jobs.append(job)
 
             for i in range(2):
-                task.on("job_actor_{}".format(i), get_job)
+                task.on("league_job_actor_{}".format(i), get_job)
 
             for i in range(2):
                 task.emit("actor_greeting", i)
@@ -84,7 +46,7 @@ def test_league_coordinator():
             assert len(jobs) == 2
             return jobs
 
-        def test_reply():
+        def test_actor_job():
             """
             When we send job reply to the coordinator,
             we'll receive two new jobs and the payoff will be upgraded.
@@ -102,15 +64,15 @@ def test_league_coordinator():
                         job.result = ["wins", "wins"]
                     else:
                         job.result = ["losses", "losses"]
-                    task.emit("actor_reply", job)
+                    task.emit("actor_job", job)
                 sleep(0.3)
                 assert player.rating.mu != 0
                 assert len(jobs) == 2
                 assert jobs[0].actor_id != jobs[1].actor_id
 
-        def test_model_meta():
+        def test_learn_meta():
             pass
 
-        test_greeting()
-        test_reply()
-        test_model_meta()
+        test_actor_greeting()
+        test_actor_job()
+        test_learn_meta()
