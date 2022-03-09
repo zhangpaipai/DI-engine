@@ -70,9 +70,9 @@ def test_league_coordinator():
                 assert len(jobs) == 2
                 assert jobs[0].actor_id != jobs[1].actor_id
 
-        def test_learn_meta():
+        def test_learner_meta():
             pass
 
         test_actor_greeting()
         test_actor_job()
-        test_learn_meta()
+        test_learner_meta()

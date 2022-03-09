@@ -1,16 +1,13 @@
 from dataclasses import dataclass
 from time import sleep
 from typing import TYPE_CHECKING, Any, Callable, Dict
-
-from cv2 import AKAZE_DESCRIPTOR_MLDB_UPRIGHT
-
 from ding.envs.env_manager.base_env_manager import BaseEnvManager
-from ding.league.v2.base_league import PlayerMeta
 from ding.worker.collector.battle_episode_serial_collector import BattleEpisodeSerialCollector
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.league.v2.base_league import Job
     from ding.policy import Policy
+    from ding.league import PlayerMeta
 
 
 @dataclass
@@ -28,7 +25,7 @@ class LeagueActor:
         self.policy_fn = policy_fn
         self._running = False
         self._collectors: Dict[str, BattleEpisodeSerialCollector] = {}
-        self._policies: Dict[str, "Policy"] = {}
+        self._policies: Dict[str, "Policy.collect_function"] = {}
         self.task.on("league_job_actor_{}".format(self.task.router.node_id), self._on_league_job)
 
     def _on_league_job(self, job: "Job") -> None:
@@ -87,7 +84,7 @@ class LeagueActor:
         """
         while not self.task.finish:
             if self._running:
-                sleep(10)
+                sleep(3)
             else:
                 self.task.emit("actor_greeting", self.task.router.node_id)
                 sleep(1)

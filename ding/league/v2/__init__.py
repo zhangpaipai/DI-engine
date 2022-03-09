@@ -1,1 +1,1 @@
-from .base_league import BaseLeague, Job, PlayerMeta
+from .base_league import BaseLeague, Job

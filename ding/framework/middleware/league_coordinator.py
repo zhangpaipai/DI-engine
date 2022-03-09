@@ -1,11 +1,12 @@
-from collections import defaultdict
-from dataclasses import dataclass, field
+import os
 import logging
 from time import sleep
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.league.v2 import BaseLeague, Job
+    from ding.framework.middleware.league_learner import LearnerMeta
 
 
 class LeagueCoordinator:
@@ -16,13 +17,12 @@ class LeagueCoordinator:
         self.league = league
         self._job_iter = self._create_job_iter()
 
-    def on_actor_greeting(self, actor_id):
+    def on_actor_greeting(self, actor_id: str):
         self._distribute_job(actor_id)
 
-    def on_learn_meta(self, model_meta):
-        player_info = {}
-        self.league.create_historical_player()
-        self.league.update_active_player(player_info)
+    def on_learner_meta(self, learner_meta: "LearnerMeta"):
+        self.league.update_active_player(learner_meta.player_id, learner_meta.train_iter)
+        self.league.create_historical_player(learner_meta.player_id, learner_meta.checkpoint)
 
     def on_actor_job(self, job: "Job"):
         actor_id = job.actor_id
@@ -46,4 +46,7 @@ class LeagueCoordinator:
     def _distribute_job(self, actor_id: str) -> None:
         job = next(self._job_iter)
         job.actor_id = actor_id
+        # sleep(0.3)
+        print("Distribute new job to actor {}".format(actor_id), os.getpid())
+        print(self.league.payoff)
         self.task.emit("league_job_actor_{}".format(actor_id), job)

@@ -1,10 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List
-import uuid
 import copy
 from easydict import EasyDict
-import os.path as osp
-from ding.framework.storage.file import FileStorage
 
 from ding.league.player import ActivePlayer, HistoricalPlayer, create_player
 from ding.league.shared_payoff import create_payoff
@@ -13,19 +10,13 @@ from ding.league.metric import LeagueMetricEnv
 from ding.framework.storage import Storage
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ding.league import Player
-
-
-@dataclass
-class PlayerMeta:
-    player_id: str
-    checkpoint: Storage
+    from ding.league import Player, PlayerMeta
 
 
 @dataclass
 class Job:
     launch_player: str
-    players: List[PlayerMeta]
+    players: List["PlayerMeta"]
     result: list = field(default_factory=list)
     train_iter: int = None
 
@@ -90,8 +81,8 @@ class BaseLeague:
             - cfg (:obj:`EasyDict`): League config.
         """
         self.cfg = deep_merge_dicts(self.default_config(), cfg)
-        self.active_players = []
-        self.historical_players = []
+        self.active_players: List["ActivePlayer"] = []
+        self.historical_players: List["HistoricalPlayer"] = []
         self.payoff = create_payoff(self.cfg.payoff)
         metric_cfg = self.cfg.metric
         self.metric_env = LeagueMetricEnv(metric_cfg.mu, metric_cfg.sigma, metric_cfg.tau, metric_cfg.draw_probability)
@@ -154,16 +145,12 @@ class BaseLeague:
             player_id = self.active_players_ids[0]
         idx = self.active_players_ids.index(player_id)
         player = self.active_players[idx]
-        player_meta = PlayerMeta(player_id=player_id, checkpoint=FileStorage(path=player.checkpoint_path))
         player_job_info = player.get_job()
-        opponent_player_meta = PlayerMeta(
-            player_id=player_job_info["opponent"].player_id,
-            checkpoint=FileStorage(path=player_job_info["opponent"].checkpoint_path)
-        )
-        job = Job(launch_player=player_id, players=[player_meta, opponent_player_meta])
+        opponent_player = player_job_info["opponent"]
+        job = Job(launch_player=player_id, players=[player.meta, opponent_player.meta])
         return job
 
-    def create_historical_player(self, player_id: str, checkpoint_path: str = None, force: bool = False) -> None:
+    def create_historical_player(self, player_id: str, checkpoint: "Storage" = None, force: bool = False) -> None:
         """
         Overview:
             Judge whether a player is trained enough for snapshot. If yes, call player's ``snapshot``, create a
@@ -173,11 +160,11 @@ class BaseLeague:
             - player_id (:obj:`ActivePlayer`): The active player's id.
         """
         idx = self.active_players_ids.index(player_id)
-        player = self.active_players[idx]
-        if force or player.is_trained_enough():
+        player: "ActivePlayer" = self.active_players[idx]
+        if force or (checkpoint and player.is_trained_enough()):
             # Snapshot
             hp = player.snapshot(self.metric_env)
-            hp._checkpoint_path = checkpoint_path  # Don't create checkpoint path in league
+            hp.checkpoint = checkpoint
             self.historical_players.append(hp)
             self.payoff.add_player(hp)
 
