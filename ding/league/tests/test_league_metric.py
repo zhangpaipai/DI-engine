@@ -53,4 +53,7 @@ def test_league_metric():
     # 1vsConstant
     new_r1 = env.rate_1vsC(r1, env.create_rating(elo_init=1800), result=['losses', 'losses'])
     assert new_r1.elo < 1611
-    print('final rating is: ', new_r1)
+    # Beat oneself
+    origin_elo = r1.elo
+    r1, _ = env.rate_1vs1(r1, r1, result=['wins'])
+    assert r1.elo == origin_elo

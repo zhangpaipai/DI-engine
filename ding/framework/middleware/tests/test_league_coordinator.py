@@ -62,6 +62,7 @@ def test_league_coordinator():
 
             with patch.object(BattleSharedPayoff, "update", new=update_payoff):
                 player = league.get_player_by_id("main_player_default_0")
+                start_elo = player.rating.elo
                 for job in _jobs:
                     if job.launch_player == "main_player_default_0":
                         job.result = ["wins", "wins"]
@@ -69,7 +70,7 @@ def test_league_coordinator():
                         job.result = ["losses", "losses"]
                     task.emit("actor_job", job)
                 sleep(0.3)
-                assert player.rating.mu != 0
+                assert player.rating.elo >= start_elo
                 assert len(jobs) == 2
                 assert jobs[0].actor_id != jobs[1].actor_id
 

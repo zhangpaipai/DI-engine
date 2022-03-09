@@ -97,7 +97,7 @@ class LeagueMetricEnv(TrueSkill):
                   result: List[str] = None,
                   **kwargs) -> Tuple[PlayerRating, PlayerRating]:
         # If one defeats oneself, elo does not change
-        if team1.elo == team2.elo:
+        if id(team1) == id(team2):
             return team1, team2
         if result is None:
             return self._rate_1vs1(team1, team2, **kwargs)
