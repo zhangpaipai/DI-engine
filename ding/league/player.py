@@ -5,6 +5,10 @@ from easydict import EasyDict
 
 from ding.utils import import_module, PLAYER_REGISTRY
 from .algorithm import pfsp
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ding.league.shared_payoff import BattleSharedPayoff
+    from ding.league.metric import PlayerRating
 
 
 class Player:
@@ -22,11 +26,11 @@ class Player:
             self,
             cfg: EasyDict,
             category: str,
-            init_payoff: 'BattleSharedPayoff',  # noqa
+            init_payoff: 'BattleSharedPayoff',
             checkpoint_path: str,
             player_id: str,
             total_agent_step: int,
-            rating: 'PlayerRating',  # noqa
+            rating: 'PlayerRating',
     ) -> None:
         """
         Overview:
@@ -57,7 +61,7 @@ class Player:
         return self._category
 
     @property
-    def payoff(self) -> 'BattleSharedPayoff':  # noqa
+    def payoff(self) -> 'BattleSharedPayoff':
         return self._payoff
 
     @property
@@ -77,11 +81,11 @@ class Player:
         self._total_agent_step = step
 
     @property
-    def rating(self) -> 'PlayerRating':  # noqa
+    def rating(self) -> 'PlayerRating':
         return self._rating
 
     @rating.setter
-    def rating(self, _rating: 'PlayerRating') -> None:  # noqa
+    def rating(self, _rating: 'PlayerRating') -> None:
         self._rating = _rating
 
 

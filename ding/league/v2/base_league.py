@@ -11,6 +11,9 @@ from ding.league.shared_payoff import create_payoff
 from ding.utils import deep_merge_dicts
 from ding.league.metric import LeagueMetricEnv
 from ding.framework.storage import Storage
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ding.league import Player
 
 
 @dataclass
@@ -21,7 +24,6 @@ class PlayerMeta:
 
 @dataclass
 class Job:
-    job_id: str
     launch_player: str
     players: List[PlayerMeta]
     result: list = field(default_factory=list)
@@ -158,7 +160,7 @@ class BaseLeague:
             player_id=player_job_info["opponent"].player_id,
             checkpoint=FileStorage(path=player_job_info["opponent"].checkpoint_path)
         )
-        job = Job(job_id=str(uuid.uuid1()), launch_player=player_id, players=[player_meta, opponent_player_meta])
+        job = Job(launch_player=player_id, players=[player_meta, opponent_player_meta])
         return job
 
     def create_historical_player(self, player_id: str, checkpoint_path: str = None, force: bool = False) -> None:
@@ -215,7 +217,7 @@ class BaseLeague:
             home_player.rating, away_player.rating, result=job_info_result
         )
 
-    def get_player_by_id(self, player_id: str) -> 'Player':  # noqa
+    def get_player_by_id(self, player_id: str) -> 'Player':
         if 'historical' in player_id:
             return [p for p in self.historical_players if p.player_id == player_id][0]
         else:

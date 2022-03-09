@@ -22,23 +22,17 @@ class LeagueCoordinator:
         self.league = league
         self._job_iter = self._create_job_iter()
 
-    def on_greet_actor(self, actor_id):
+    def on_actor_greeting(self, actor_id):
         self._distribute_job(actor_id)
 
     def on_model_meta(self, model_meta):
         player_info = {}
+        self.league.create_historical_player()
         self.league.update_active_player(player_info)
 
-    def on_job_reply(self, job: "Job"):
+    def on_actor_reply(self, job: "Job"):
         actor_id = job.actor_id
-        self.league.judge_snapshot(job.player_id)
-        job_finish_info = {
-            'eval_flag': True,
-            'launch_player': job['launch_player'],
-            'player_id': job['player_id'],
-            'result': [e['result'] for e in job["episode_info"]],
-        }
-        self.league.finish_job(job_finish_info)
+        self.league.update_payoff(job)
         self._distribute_job(actor_id)
 
     def _create_job_iter(self):
