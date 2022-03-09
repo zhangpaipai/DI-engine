@@ -5,7 +5,9 @@ from unittest.mock import patch
 from ding.framework.middleware.tests.league_config import cfg
 import pytest
 from ding.framework.middleware.league_coordinator import LeagueCoordinator
+from ding.framework.storage.file import FileStorage
 from ding.framework.task import Task
+from ding.league.player import PlayerMeta
 from ding.league.shared_payoff import BattleSharedPayoff
 
 from ding.league.v2.base_league import BaseLeague, Job
@@ -21,6 +23,7 @@ def mock_cfg_league():
 @pytest.mark.unittest
 def test_league_coordinator():
     cfg, league = mock_cfg_league()
+    league: "BaseLeague"
 
     with Task(async_mode=True) as task:
         coordinator = LeagueCoordinator(task, cfg=cfg, league=league)
@@ -70,9 +73,22 @@ def test_league_coordinator():
                 assert len(jobs) == 2
                 assert jobs[0].actor_id != jobs[1].actor_id
 
-        def test_learner_meta():
-            pass
+        def test_learner_player_meta():
+            """
+            When receiving meta data of learner
+            """
+            train_iter = int(1e7)
+            learner_meta = PlayerMeta(
+                player_id="main_player_default_0", checkpoint=FileStorage("abc"), total_agent_step=train_iter
+            )
+            task.emit("learner_player_meta", learner_meta)
+            sleep(1)
+            player = league.get_player_by_id("main_player_default_0")
+            assert player.total_agent_step == train_iter
+            assert len(league.historical_players) == 1
+            hp = league.historical_players[0]
+            assert hp.checkpoint.path == "abc"
 
         test_actor_greeting()
         test_actor_job()
-        test_learner_meta()
+        test_learner_player_meta()

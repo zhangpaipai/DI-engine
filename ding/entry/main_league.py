@@ -53,8 +53,8 @@ def main():
                     task.use(LeagueActor(task, cfg=cfg, env_fn=env_fn, policy_fn=policy_fn))
                 elif worker == "league_learner":  # On player on each learner
                     n_players = len(league.active_players_ids)
-                    player_id = league.active_players_ids[task.router.node_id % n_players]
-                    task.use(LeagueLearner(task, cfg=cfg, policy_fn=policy_fn, player_id=player_id))
+                    player = league.active_players[task.router.node_id % n_players]
+                    task.use(LeagueLearner(task, cfg=cfg, policy_fn=policy_fn, player=player))
                 else:
                     raise ValueError("Undefined worker type: {}".format(worker))
         task.run(100)

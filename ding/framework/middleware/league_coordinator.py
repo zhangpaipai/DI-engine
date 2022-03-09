@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.league.v2 import BaseLeague, Job
-    from ding.framework.middleware.league_learner import LearnerMeta
+    from ding.league import PlayerMeta
 
 
 class LeagueCoordinator:
@@ -20,9 +20,9 @@ class LeagueCoordinator:
     def on_actor_greeting(self, actor_id: str):
         self._distribute_job(actor_id)
 
-    def on_learner_meta(self, learner_meta: "LearnerMeta"):
-        self.league.update_active_player(learner_meta.player_id, learner_meta.train_iter)
-        self.league.create_historical_player(learner_meta.player_id, learner_meta.checkpoint)
+    def on_learner_player_meta(self, player_meta: "PlayerMeta"):
+        self.league.update_active_player(player_meta)
+        self.league.create_historical_player(player_meta)
 
     def on_actor_job(self, job: "Job"):
         actor_id = job.actor_id
@@ -47,6 +47,6 @@ class LeagueCoordinator:
         job = next(self._job_iter)
         job.actor_id = actor_id
         # sleep(0.3)
-        print("Distribute new job to actor {}".format(actor_id), os.getpid())
-        print(self.league.payoff)
+        # print("Distribute new job to actor {}".format(actor_id), os.getpid())
+        # print(self.league.payoff)
         self.task.emit("league_job_actor_{}".format(actor_id), job)

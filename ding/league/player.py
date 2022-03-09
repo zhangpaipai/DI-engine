@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import traceback
 from typing import Callable, Optional, List
 from collections import namedtuple
 import numpy as np
@@ -10,6 +11,7 @@ from ding.framework.storage import FileStorage
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ding.league.shared_payoff import BattleSharedPayoff
+    from ding.league.metric import LeagueMetricEnv
     from ding.league.metric import PlayerRating
     from ding.framework.storage import Storage
 
@@ -18,6 +20,7 @@ if TYPE_CHECKING:
 class PlayerMeta:
     player_id: str
     checkpoint: "Storage"
+    total_agent_step: int = 0
 
 
 class Player:
@@ -59,13 +62,12 @@ class Player:
         self._category = category
         self._payoff = init_payoff
         self._checkpoint_path = checkpoint_path
-        self._checkpoint = FileStorage(path=checkpoint_path)
+        self.checkpoint = FileStorage(path=checkpoint_path)
         assert isinstance(player_id, str)
         self._player_id = player_id
         assert isinstance(total_agent_step, int), (total_agent_step, type(total_agent_step))
         self._total_agent_step = total_agent_step
         self._rating = rating
-        self.meta = PlayerMeta(player_id=player_id, checkpoint=self.checkpoint)
 
     @property
     def category(self) -> str:
@@ -100,12 +102,8 @@ class Player:
         self._rating = _rating
 
     @property
-    def checkpoint(self) -> "Storage":
-        return self._checkpoint
-
-    @checkpoint.setter
-    def checkpoint(self, _checkpoint: "Storage") -> None:
-        self._checkpoint = _checkpoint
+    def meta(self) -> PlayerMeta:
+        return PlayerMeta(player_id=self.player_id, checkpoint=self.checkpoint, total_agent_step=self.total_agent_step)
 
 
 @PLAYER_REGISTRY.register('historical_player')
@@ -202,7 +200,9 @@ class ActivePlayer(Player):
             else:
                 return False
 
-    def snapshot(self, metric_env: 'LeagueMetricEnv') -> HistoricalPlayer:  # noqa
+    def snapshot(
+            self, metric_env: 'LeagueMetricEnv', checkpoint: Optional["Storage"] = None
+    ) -> HistoricalPlayer:  # noqa
         """
         Overview:
             Generate a snapshot historical player from the current player, called in league's ``_snapshot``.
@@ -215,8 +215,11 @@ class ActivePlayer(Player):
             This method only generates a historical player object, but without saving the checkpoint, which should be
             done by league.
         """
-        path = self.checkpoint_path.split('.pth')[0] + '_{}'.format(self._total_agent_step) + '.pth'
-        return HistoricalPlayer(
+        if checkpoint:
+            path = checkpoint.path
+        else:
+            path = self.checkpoint_path.split('.pth')[0] + '_{}'.format(self._total_agent_step) + '.pth'
+        hp = HistoricalPlayer(
             self._cfg,
             self.category,
             self.payoff,
@@ -226,6 +229,9 @@ class ActivePlayer(Player):
             metric_env.create_rating(mu=self.rating.mu),
             parent_id=self.player_id
         )
+        if checkpoint:
+            hp.checkpoint = checkpoint
+        return hp
 
     def mutate(self, info: dict) -> Optional[str]:
         """

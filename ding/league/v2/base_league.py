@@ -150,7 +150,7 @@ class BaseLeague:
         job = Job(launch_player=player_id, players=[player.meta, opponent_player.meta])
         return job
 
-    def create_historical_player(self, player_id: str, checkpoint: "Storage" = None, force: bool = False) -> None:
+    def create_historical_player(self, player_meta: "PlayerMeta", force: bool = False) -> None:
         """
         Overview:
             Judge whether a player is trained enough for snapshot. If yes, call player's ``snapshot``, create a
@@ -159,16 +159,15 @@ class BaseLeague:
         Arguments:
             - player_id (:obj:`ActivePlayer`): The active player's id.
         """
-        idx = self.active_players_ids.index(player_id)
+        idx = self.active_players_ids.index(player_meta.player_id)
         player: "ActivePlayer" = self.active_players[idx]
-        if force or (checkpoint and player.is_trained_enough()):
+        if force or (player_meta.checkpoint and player.is_trained_enough()):
             # Snapshot
-            hp = player.snapshot(self.metric_env)
-            hp.checkpoint = checkpoint
+            hp = player.snapshot(self.metric_env, player_meta.checkpoint)
             self.historical_players.append(hp)
             self.payoff.add_player(hp)
 
-    def update_active_player(self, player_id: str, train_iter: int) -> None:
+    def update_active_player(self, player_meta: "PlayerMeta") -> None:
         """
         Overview:
             Update an active player's info.
@@ -176,10 +175,10 @@ class BaseLeague:
             - player_id (:obj:`str`): Player id.
             - train_iter (:obj:`int`): Train iteration.
         """
-        idx = self.active_players_ids.index(player_id)
+        idx = self.active_players_ids.index(player_meta.player_id)
         player = self.active_players[idx]
         if isinstance(player, ActivePlayer):
-            player.total_agent_step = train_iter
+            player.total_agent_step = player_meta.total_agent_step
 
     def update_payoff(self, job: Job) -> None:
         """
