@@ -3,6 +3,8 @@ import logging
 import os
 import pickle
 import time
+import pathlib
+from os import path as osp
 from functools import lru_cache
 from typing import NoReturn, Union
 
@@ -305,6 +307,8 @@ def save_file(path: str, data: object, fs_type: Union[None, str] = None, use_loc
         - fs_type (:obj:`str` or :obj:`None`): The file system type, support ``{'normal', 'ceph'}``
         - use_lock (:obj:`bool`): Whether ``use_lock`` is in local normal file system
     """
+    if not osp.exists(osp.dirname(path)):
+        pathlib.Path(osp.dirname(path)).mkdir(parents=True, exist_ok=True)
     if fs_type is None:
         if path.lower().startswith('s3'):
             fs_type = 'ceph'
