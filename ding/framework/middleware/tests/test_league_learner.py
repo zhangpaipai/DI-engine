@@ -8,6 +8,7 @@ from copy import deepcopy
 from rx import return_value
 
 from ding.framework.middleware.league_actor import ActorData
+from ding.framework.middleware.league_learner import LearnerModel
 from ding.framework.middleware.tests.league_config import cfg
 from unittest.mock import patch
 from ding.framework.storage.file import FileStorage
@@ -58,7 +59,7 @@ def test_league_learner():
         league_learner = LeagueLearner(task, cfg=cfg, policy_fn=policy_fn, player=player)
         task.use(league_learner)
 
-        testcases = {"learner_player_meta": False, "save_storage": False}
+        testcases = {"learner_player_meta": False, "save_storage": False, "learner_model": False}
 
         def on_learner_player_meta(player_meta: PlayerMeta):
             assert player_meta.player_id == player.player_id
@@ -66,16 +67,20 @@ def test_league_learner():
             assert player_meta.total_agent_step == 120
             testcases["learner_player_meta"] = True
 
+        def on_learner_model(learner_model: LearnerModel):
+            assert learner_model
+            testcases["learner_model"] = True
+
         def save_file(self, data: dict):
-            print("Data", type(data))
-            print("Data keys", data.keys())
-            assert "ckpt.pth" in self.path
+            assert self.path == "league_demo/policy/main_player_default_0_120_ckpt.pth"
             assert data
             testcases["save_storage"] = True
 
         with patch.object(FileStorage, "save", new=save_file),\
             patch.object(ActivePlayer, "is_trained_enough", return_value=True):
             task.on("learner_player_meta", on_learner_player_meta)
+            task.on("learner_model", on_learner_model)
+
             actor_data = ActorData(env_step=1, train_data=train_data)
             event = "actor_data_player_{}".format(player.player_id)
             task.emit(event, actor_data)

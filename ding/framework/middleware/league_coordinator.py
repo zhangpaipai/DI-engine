@@ -1,5 +1,3 @@
-import os
-import logging
 from time import sleep
 from typing import TYPE_CHECKING
 
@@ -44,7 +42,4 @@ class LeagueCoordinator:
     def _distribute_job(self, actor_id: str) -> None:
         job = next(self._job_iter)
         job.actor_id = actor_id
-        # sleep(0.3)
-        # print("Distribute new job to actor {}".format(actor_id), os.getpid())
-        # print(self.league.payoff)
         self.task.emit("league_job_actor_{}".format(actor_id), job)

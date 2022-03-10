@@ -1,13 +1,15 @@
 from dataclasses import dataclass
+import logging
 from time import sleep
 from typing import TYPE_CHECKING, Any, Callable, Dict
 from ding.envs.env_manager.base_env_manager import BaseEnvManager
 from ding.worker.collector.battle_episode_serial_collector import BattleEpisodeSerialCollector
+from ding.league import PlayerMeta
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.league.v2.base_league import Job
     from ding.policy import Policy
-    from ding.league import PlayerMeta
+    from ding.framework.middleware.league_learner import LearnerModel
 
 
 @dataclass
@@ -28,6 +30,13 @@ class LeagueActor:
         self._policies: Dict[str, "Policy.collect_function"] = {}
         self._model_updated = True
         self.task.on("league_job_actor_{}".format(self.task.router.node_id), self._on_league_job)
+        self.task.on("learner_model", self._on_learner_model)
+
+    def _on_learner_model(self, learner_model: "LearnerModel"):
+        player_meta = PlayerMeta(player_id=learner_model.player_id, checkpoint=None)
+        policy = self._get_policy(player_meta)
+        policy.load_state_dict(learner_model.state_dict)
+        self._model_updated = True
 
     def _on_league_job(self, job: "Job") -> None:
         """
@@ -40,6 +49,9 @@ class LeagueActor:
             if self._model_updated:
                 self._model_updated = False
                 break
+            logging.info(
+                "Waiting for new model on actor: {}, player: {}".format(self.task.router.node_id, job.launch_player)
+            )
             sleep(1)
 
         collector = self._get_collector(job.launch_player)
@@ -69,8 +81,7 @@ class LeagueActor:
         if self._collectors.get(player_id):
             return self._collectors.get(player_id)
         cfg = self.cfg
-        env = BaseEnvManager(env_fn=[self.env_fn for _ in range(cfg.env.collector_env_num)], cfg=cfg.env.manager)
-        env.seed(self.cfg.seed)
+        env = self.env_fn()
         collector = BattleEpisodeSerialCollector(
             cfg.policy.collect.collector,
             env,

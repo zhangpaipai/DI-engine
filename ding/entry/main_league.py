@@ -11,7 +11,6 @@ from ding.league.v2 import BaseLeague
 from ding.config.example.league_config import league_config
 from dizoo.league_demo.game_env import GameEnv
 from ding.framework.middleware import LeagueCoordinator, LeagueActor, LeagueLearner
-from rich import print
 
 
 def main():
@@ -28,7 +27,11 @@ def main():
     set_pkg_seed(cfg.seed, use_cuda=cfg.policy.cuda)
 
     def env_fn():
-        return GameEnv(cfg.env.env_type)
+        env = BaseEnvManager(
+            env_fn=[lambda: GameEnv(cfg.env.env_type) for _ in range(cfg.env.collector_env_num)], cfg=cfg.env.manager
+        )
+        env.seed(cfg.seed)
+        return env
 
     def policy_fn():
         model = VAC(**cfg.policy.model)

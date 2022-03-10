@@ -1,6 +1,8 @@
 from time import sleep
 import pytest
 from copy import deepcopy
+from ding.envs import BaseEnvManager
+from ding.framework.middleware.league_learner import LearnerModel
 from ding.framework.middleware.tests.league_config import cfg
 from ding.framework.middleware.league_actor import ActorData, LeagueActor
 
@@ -16,7 +18,11 @@ def prepare_test():
     cfg = deepcopy(cfg)
 
     def env_fn():
-        return GameEnv(cfg.env.env_type)
+        env = BaseEnvManager(
+            env_fn=[lambda: GameEnv(cfg.env.env_type) for _ in range(cfg.env.collector_env_num)], cfg=cfg.env.manager
+        )
+        env.seed(cfg.seed)
+        return env
 
     def policy_fn():
         model = VAC(**cfg.policy.model)
@@ -30,6 +36,7 @@ def prepare_test():
 @pytest.mark.unittest
 def test_league_actor():
     cfg, env_fn, policy_fn, league = prepare_test()
+    policy = policy_fn()
     league: BaseLeague
     with Task(async_mode=True) as task:
         league_actor = LeagueActor(task, cfg=cfg, env_fn=env_fn, policy_fn=policy_fn)
@@ -62,6 +69,16 @@ def test_league_actor():
                 sleep(0.3)
                 task.emit("league_job_actor_{}".format(task.router.node_id), job)
                 sleep(0.3)
+                assert league_actor._model_updated == False
+
+                task.emit(
+                    "learner_model",
+                    LearnerModel(
+                        player_id=league.active_players_ids[0], state_dict=policy.learn_mode.state_dict(), train_iter=0
+                    )
+                )
+                sleep(0.3)
+                assert league_actor._model_updated == True
                 try:
                     assert all(testcases.values())
                 finally:

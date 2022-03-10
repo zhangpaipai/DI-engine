@@ -1,25 +1,20 @@
 from dataclasses import dataclass
-import logging
 from time import sleep
 from os import path as osp
-import traceback
 from ding.framework.storage import Storage, FileStorage
 from ding.league.player import PlayerMeta
-from ding.worker import learner
 from ding.worker.learner.base_learner import BaseLearner
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 if TYPE_CHECKING:
     from ding.framework import Task, Context
-    from ding.utils.log_writer_helper import DistributedWriter
     from ding.framework.middleware.league_actor import ActorData
-    from ding.policy import Policy
     from ding.league import ActivePlayer
 
 
 @dataclass
 class LearnerModel:
     player_id: str
-    state_dict: Any
+    state_dict: dict
     train_iter: int = 0
 
 
@@ -45,6 +40,11 @@ class LeagueLearner:
             "learner_player_meta",
             PlayerMeta(player_id=self.player_id, checkpoint=checkpoint, total_agent_step=self._learner.train_iter)
         )
+
+        learner_model = LearnerModel(
+            player_id=self.player_id, state_dict=self._learner.policy.state_dict(), train_iter=self._learner.train_iter
+        )
+        self.task.emit("learner_model", learner_model)
 
     def _get_learner(self) -> BaseLearner:
         policy = self.policy_fn().learn_mode
