@@ -88,7 +88,7 @@ league_config = dict(
             ),
         ),
     ),
-    task=dict(workers=dict(league_coordinator=1, league_actor=2, league_learner=0))
+    task=dict(workers=dict(league_coordinator=1, league_actor=2, league_learner=2))
 )
 league_config = EasyDict(league_config)
 league_create_config = EasyDict({})
