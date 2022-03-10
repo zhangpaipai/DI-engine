@@ -1,6 +1,12 @@
 from collections import defaultdict
+from time import sleep
+import traceback
 from typing import Callable, Optional
 from concurrent.futures import ThreadPoolExecutor
+from ding.utils import add_sigint_handler, remove_sigint_handler
+import _thread
+import sys
+import signal
 import fnmatch
 import logging
 
@@ -14,6 +20,7 @@ class EventLoop:
         self._thread_pool = ThreadPoolExecutor(max_workers=2)
         self._exception = None
         self._active = True
+        add_sigint_handler(id(self), self._signal_handler)
 
     def on(self, event: str, fn: Callable) -> None:
         """
@@ -63,8 +70,6 @@ class EventLoop:
         Arguments:
             - event (:obj:`str`): Event name.
         """
-        if self._exception:
-            raise self._exception
         if self._active:
             self._thread_pool.submit(self._trigger, event, *args, **kwargs)
 
@@ -84,6 +89,8 @@ class EventLoop:
                 fn(*args, **kwargs)
             except Exception as e:
                 self._exception = e
+                _thread.interrupt_main()
+                break
 
     def listened(self, event: str) -> bool:
         """
@@ -112,10 +119,15 @@ class EventLoop:
     def stop(self) -> None:
         self._active = False
         self._listeners = defaultdict(list)
-        self._exception = None
         self._thread_pool.shutdown()
         if self._name in EventLoop.loops:
             del EventLoop.loops[self._name]
+        self._exception = None
+        remove_sigint_handler(id(self))
+
+    def _signal_handler(self, signal, frame):
+        if self._exception:
+            raise self._exception
 
     def __del__(self) -> None:
         if self._active:

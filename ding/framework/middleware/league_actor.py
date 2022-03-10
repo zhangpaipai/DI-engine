@@ -26,6 +26,7 @@ class LeagueActor:
         self._running = False
         self._collectors: Dict[str, BattleEpisodeSerialCollector] = {}
         self._policies: Dict[str, "Policy.collect_function"] = {}
+        self._model_updated = True
         self.task.on("league_job_actor_{}".format(self.task.router.node_id), self._on_league_job)
 
     def _on_league_job(self, job: "Job") -> None:
@@ -33,6 +34,13 @@ class LeagueActor:
         Deal with job distributed by coordinator
         """
         self._running = True
+
+        # Wait new active model for 10 seconds
+        for _ in range(10):
+            if self._model_updated:
+                self._model_updated = False
+                break
+            sleep(1)
 
         collector = self._get_collector(job.launch_player)
         policies = []
@@ -49,11 +57,11 @@ class LeagueActor:
         for d in train_data:
             d["adv"] = d["reward"]
 
-        job.result = [e['result'] for e in episode_info]
-        self.task.emit("actor_job", job)
-
         actor_data = ActorData(env_step=collector.envstep, train_data=train_data)
         self.task.emit("actor_data_player_{}".format(job.launch_player), actor_data)
+
+        job.result = [e['result'] for e in episode_info]
+        self.task.emit("actor_job", job)
 
         self._running = False
 
@@ -87,9 +95,6 @@ class LeagueActor:
         """
         Send heartbeat to coordinator until receiving job
         """
-        while not self.task.finish:
-            if self._running:
-                sleep(3)
-            else:
-                self.task.emit("actor_greeting", self.task.router.node_id)
-                sleep(1)
+        if not self._running:
+            self.task.emit("actor_greeting", self.task.router.node_id)
+        sleep(1)

@@ -39,9 +39,7 @@ class LeagueCoordinator:
             yield job
 
     def __call__(self, _: "Context") -> None:
-        logging.info("League start on node {}".format(self.task.router.node_id))
-        while not self.task.finish:
-            sleep(1)
+        sleep(1)
 
     def _distribute_job(self, actor_id: str) -> None:
         job = next(self._job_iter)

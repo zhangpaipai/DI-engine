@@ -1,4 +1,4 @@
-from typing import Tuple, Union, List
+from typing import Tuple, List
 import math
 import numpy as np
 from trueskill import TrueSkill, Rating, rate_1vs1
