@@ -81,7 +81,7 @@ def test_league_learner():
             task.emit(event, actor_data)
 
             passed = False
-            for _ in range(3):
+            for _ in range(5):
                 if all(testcases.values()):
                     passed = True
                     break
