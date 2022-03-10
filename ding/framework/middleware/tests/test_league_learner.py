@@ -1,10 +1,11 @@
-import sys
 from time import sleep
 from typing import Any
 import pytest
 
 import pytest
 from copy import deepcopy
+
+from rx import return_value
 
 from ding.framework.middleware.league_actor import ActorData
 from ding.framework.middleware.tests.league_config import cfg
@@ -43,7 +44,7 @@ def prepare_test():
             'traj_flag': True,
             'adv': tensor([-20.])
         }
-    ]
+    ] * 128
 
     league = BaseLeague(cfg.policy.other.league)
     return cfg, policy_fn, league, train_data
@@ -62,20 +63,27 @@ def test_league_learner():
         def on_learner_player_meta(player_meta: PlayerMeta):
             assert player_meta.player_id == player.player_id
             assert player_meta.checkpoint
-            assert player_meta.total_agent_step == 3
+            assert player_meta.total_agent_step == 120
             testcases["learner_player_meta"] = True
 
-        def save_file(self, data: Any):
-            print(self.path)
+        def save_file(self, data: dict):
+            print("Data", type(data))
+            print("Data keys", data.keys())
             assert "ckpt.pth" in self.path
-            print("Data", data)
             assert data
             testcases["save_storage"] = True
 
-        with patch.object(FileStorage, "save", new=save_file):
+        with patch.object(FileStorage, "save", new=save_file),\
+            patch.object(ActivePlayer, "is_trained_enough", return_value=True):
             task.on("learner_player_meta", on_learner_player_meta)
             actor_data = ActorData(env_step=1, train_data=train_data)
             event = "actor_data_player_{}".format(player.player_id)
             task.emit(event, actor_data)
-            sleep(1)
-            assert all(testcases.values())
+
+            passed = False
+            for _ in range(3):
+                if all(testcases.values()):
+                    passed = True
+                    break
+                sleep(1)
+            assert passed, testcases

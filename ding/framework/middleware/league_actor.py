@@ -52,7 +52,7 @@ class LeagueActor:
 
         assert main_player, "Can not find active player"
         collector.reset_policy(policies)
-        train_data, episode_info = collector.collect(train_iter=main_player.total_agent_step)  # TODO Missing train_iter
+        train_data, episode_info = collector.collect(train_iter=main_player.total_agent_step)
         train_data, episode_info = train_data[0], episode_info[0]  # only use main player data for training
         for d in train_data:
             d["adv"] = d["reward"]
