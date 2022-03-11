@@ -41,7 +41,12 @@ league_config = dict(
             learner=dict(log_policy=False),
         ),
         collect=dict(
-            n_episode=128, unroll_len=1, discount_factor=1.0, gae_lambda=1.0, collector=dict(get_train_sample=True, )
+            n_episode=128,
+            unroll_len=1,
+            discount_factor=1.0,
+            gae_lambda=1.0,
+            collector=dict(get_train_sample=True, ),
+            # n_rollout_samples=128
         ),
         other=dict(
             league=dict(

@@ -4,7 +4,7 @@ from os import path as osp
 from ding.framework.storage import Storage, FileStorage
 from ding.league.player import PlayerMeta
 from ding.worker.learner.base_learner import BaseLearner
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.framework.middleware.league_actor import ActorData

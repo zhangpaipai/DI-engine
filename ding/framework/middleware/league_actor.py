@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 import logging
 from time import sleep
-from typing import TYPE_CHECKING, Any, Callable, Dict
-from ding.envs.env_manager.base_env_manager import BaseEnvManager
-from ding.worker.collector.battle_episode_serial_collector import BattleEpisodeSerialCollector
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
+from ding.worker.collector import BattleEpisodeSerialCollector
 from ding.league import PlayerMeta
 if TYPE_CHECKING:
     from ding.framework import Task, Context
@@ -25,6 +24,7 @@ class LeagueActor:
         self.task = task
         self.env_fn = env_fn
         self.policy_fn = policy_fn
+        self.n_rollout_samples = self.cfg.policy.collect.get("n_rollout_samples") or 0
         self._running = False
         self._collectors: Dict[str, BattleEpisodeSerialCollector] = {}
         self._policies: Dict[str, "Policy.collect_function"] = {}
@@ -64,17 +64,49 @@ class LeagueActor:
 
         assert main_player, "Can not find active player"
         collector.reset_policy(policies)
-        train_data, episode_info = collector.collect(train_iter=main_player.total_agent_step)
-        train_data, episode_info = train_data[0], episode_info[0]  # only use main player data for training
-        for d in train_data:
-            d["adv"] = d["reward"]
 
-        actor_data = ActorData(env_step=collector.envstep, train_data=train_data)
-        self.task.emit("actor_data_player_{}".format(job.launch_player), actor_data)
+        def send_actor_job(episode_info: List):
+            job.result = [e['result'] for e in episode_info]
+            self.task.emit("actor_job", job)
 
-        job.result = [e['result'] for e in episode_info]
-        self.task.emit("actor_job", job)
+        def send_actor_data(train_data: List):
+            for d in train_data:
+                d["adv"] = d["reward"]
 
+            actor_data = ActorData(env_step=collector.envstep, train_data=train_data)
+            self.task.emit("actor_data_player_{}".format(job.launch_player), actor_data)
+
+        buffered_data = []
+        if self.n_rollout_samples > 0:
+            # Use streaming type sampling
+            def pipe_actor_job(policy_id, episode_info):
+                # Send episode info when each episode finished
+                if policy_id == 0:
+                    send_actor_job([episode_info])
+
+            def pipe_actor_data(policy_id, train_data):
+                # Send actor data each n_rollout_samples
+                if policy_id == 0:
+                    buffered_data.append(train_data)
+                if len(buffered_data) >= 128:
+                    send_actor_data(buffered_data[:])
+                    buffered_data.clear()
+
+            collector.event_loop.on("train_data", pipe_actor_data)
+            collector.event_loop.on("episode_info", pipe_actor_job)
+            collector.collect(train_iter=main_player.total_agent_step)
+            # Rest bufferd data
+            if buffered_data:
+                send_actor_data(buffered_data[:])
+                buffered_data.clear()
+        else:
+            # Use batch type sampling
+            train_data, episode_info = collector.collect(train_iter=main_player.total_agent_step)
+            train_data, episode_info = train_data[0], episode_info[0]  # only use main player data for training
+            send_actor_data(train_data)
+            send_actor_job(episode_info)
+
+        self.task.emit("actor_greeting", self.task.router.node_id)
         self._running = False
 
     def _get_collector(self, player_id: str) -> BattleEpisodeSerialCollector:
@@ -87,6 +119,7 @@ class LeagueActor:
             env,
             exp_name=cfg.exp_name,
             instance_name=player_id + '_collector',
+            enable_event_loop=(self.n_rollout_samples > 0)
         )
         self._collectors[player_id] = collector
         return collector
@@ -108,4 +141,4 @@ class LeagueActor:
         """
         if not self._running:
             self.task.emit("actor_greeting", self.task.router.node_id)
-        sleep(1)
+        sleep(3)

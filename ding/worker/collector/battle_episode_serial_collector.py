@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from ding.envs import BaseEnvManager
+from ding.framework.event_loop import EventLoop
 from ding.utils import build_logger, EasyTimer, SERIAL_COLLECTOR_REGISTRY, dicts_to_lists
 from ding.torch_utils import to_tensor, to_ndarray
 from .base_serial_collector import ISerialCollector, CachePool, TrajBuffer, INF, to_tensor_transitions
@@ -30,6 +31,7 @@ class BattleEpisodeSerialCollector(ISerialCollector):
             policy: List[namedtuple] = None,
             tb_logger: 'SummaryWriter' = None,  # noqa
             exp_name: Optional[str] = 'default_experiment',
+            enable_event_loop: bool = False,
             instance_name: Optional[str] = 'collector'
     ) -> None:
         """
@@ -49,6 +51,7 @@ class BattleEpisodeSerialCollector(ISerialCollector):
         self._cfg = cfg
         self._timer = EasyTimer()
         self._end_flag = False
+        self.event_loop = EventLoop("{}{}".format(__name__, id(self)), max_workers=1) if enable_event_loop else None
 
         if tb_logger is not None:
             self._logger, _ = build_logger(
@@ -264,8 +267,13 @@ class BattleEpisodeSerialCollector(ISerialCollector):
                             if self._cfg.get_train_sample:
                                 train_sample = self._policy[policy_id].get_train_sample(transitions)
                                 return_data[policy_id].extend(train_sample)
+                                if self.event_loop:
+                                    for transitions in train_sample:
+                                        self.event_loop.emit("train_data", policy_id, transitions)
                             else:
                                 return_data[policy_id].append(transitions)
+                                if self.event_loop:
+                                    self.event_loop.emit("train_data", policy_id, transitions)
                             self._traj_buffer[env_id][policy_id].clear()
 
                 self._env_info[env_id]['time'] += self._timer.value + interaction_duration
@@ -287,6 +295,8 @@ class BattleEpisodeSerialCollector(ISerialCollector):
                     ready_env_id.remove(env_id)
                     for policy_id in range(2):
                         return_info[policy_id].append(timestep.info[policy_id])
+                        if self.event_loop:
+                            self.event_loop.emit("episode_info", policy_id, timestep.info[policy_id])
             if collected_episode >= n_episode:
                 break
         # log

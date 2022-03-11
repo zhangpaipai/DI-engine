@@ -60,7 +60,7 @@ def main():
                     task.use(LeagueLearner(task, cfg=cfg, policy_fn=policy_fn, player=player))
                 else:
                     raise ValueError("Undefined worker type: {}".format(worker))
-        task.run(100)
+        task.run()
 
 
 if __name__ == "__main__":

@@ -25,9 +25,7 @@ class LeagueCoordinator:
         self.league.create_historical_player(player_meta)
 
     def on_actor_job(self, job: "Job"):
-        actor_id = job.actor_id
         self.league.update_payoff(job)
-        self._distribute_job(actor_id)
 
     def _create_job_iter(self) -> "Job":
         i = 0

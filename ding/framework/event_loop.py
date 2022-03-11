@@ -14,10 +14,17 @@ import logging
 class EventLoop:
     loops = {}
 
-    def __init__(self, name: str = "default") -> None:
+    def __init__(self, name: str = "default", max_workers: int = 2) -> None:
+        """
+        Overview:
+            Event loop.
+        Arguments:
+            - name (:obj:`str`): Event loop name.
+            - max_workers (:obj:`int`): Max workers for thread pool.
+        """
         self._name = name
         self._listeners = defaultdict(list)
-        self._thread_pool = ThreadPoolExecutor(max_workers=2)
+        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         self._exception = None
         self._active = True
         add_sigint_handler(id(self), self._signal_handler)
