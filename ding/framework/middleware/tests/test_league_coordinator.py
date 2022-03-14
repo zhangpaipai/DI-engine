@@ -71,8 +71,6 @@ def test_league_coordinator():
                     task.emit("actor_job", job)
                 sleep(0.3)
                 assert player.rating.elo >= start_elo
-                assert len(jobs) == 2
-                assert jobs[0].actor_id != jobs[1].actor_id
 
         def test_learner_player_meta():
             """

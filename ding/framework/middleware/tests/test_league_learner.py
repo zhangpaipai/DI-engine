@@ -1,12 +1,8 @@
 from time import sleep
-from typing import Any
 import pytest
 
 import pytest
 from copy import deepcopy
-
-from rx import return_value
-
 from ding.framework.middleware.league_actor import ActorData
 from ding.framework.middleware.league_learner import LearnerModel
 from ding.framework.middleware.tests.league_config import cfg
@@ -17,7 +13,7 @@ from ding.league import ActivePlayer
 from ding.framework.task import Task
 from torch import tensor
 from ding.league.player import PlayerMeta
-from ding.league.v2.base_league import BaseLeague, Job
+from ding.league.v2.base_league import BaseLeague
 from ding.framework.middleware import LeagueLearner
 from ding.model import VAC
 from ding.policy.ppo import PPOPolicy

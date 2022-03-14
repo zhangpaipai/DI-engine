@@ -1,7 +1,6 @@
-from collections import defaultdict, deque
-import logging
 from time import sleep
 from typing import TYPE_CHECKING
+from threading import Lock
 
 if TYPE_CHECKING:
     from ding.framework import Task, Context
@@ -16,6 +15,7 @@ class LeagueCoordinator:
         self.cfg = cfg
         self.league = league
         self._job_iter = self._create_job_iter()
+        self._lock = Lock()
 
     def on_actor_greeting(self, actor_id: str):
         self._distribute_job(actor_id)
@@ -40,6 +40,7 @@ class LeagueCoordinator:
         sleep(1)
 
     def _distribute_job(self, actor_id: str) -> None:
-        job = next(self._job_iter)
+        with self._lock:
+            job = next(self._job_iter)
         job.actor_id = actor_id
         self.task.emit("league_job_actor_{}".format(actor_id), job)
