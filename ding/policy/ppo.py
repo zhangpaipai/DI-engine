@@ -108,7 +108,6 @@ class PPOPolicy(Policy):
                 elif self._action_space == 'hybrid':  # actor_head[1]: ReparameterizationHead, for action_args
                     if hasattr(self._model.actor_head[1], 'log_sigma_param'):
                         torch.nn.init.constant_(self._model.actor_head[1].log_sigma_param, -0.5)
-                        print('init ok')
 
                 for m in list(self._model.critic.modules()) + list(self._model.actor.modules()):
                     if isinstance(m, torch.nn.Linear):
@@ -301,6 +300,8 @@ class PPOPolicy(Policy):
         self._gamma = self._cfg.collect.discount_factor
         self._gae_lambda = self._cfg.collect.gae_lambda
         self._recompute_adv = self._cfg.recompute_adv
+        if self._cfg.learn.value_norm:
+            self._running_mean_std = RunningMeanStd(epsilon=1e-4, device=self._device)
 
     def _forward_collect(self, data: dict) -> dict:
         r"""
@@ -385,7 +386,7 @@ class PPOPolicy(Policy):
                     last_value = self._collect_model.forward(
                         data[-1]['next_obs'].unsqueeze(0), mode='compute_actor_critic'
                     )['value']
-        if self._value_norm:
+        if self._cfg.learn.value_norm:
             last_value *= self._running_mean_std.std
             for i in range(len(data)):
                 data[i]['value'] *= self._running_mean_std.std
@@ -396,7 +397,7 @@ class PPOPolicy(Policy):
             gae_lambda=self._gae_lambda,
             cuda=False,
         )
-        if self._value_norm:
+        if self._cfg.learn.value_norm:
             for i in range(len(data)):
                 data[i]['value'] /= self._running_mean_std.std
 
