@@ -5,6 +5,7 @@ from ding.framework.storage import Storage, FileStorage
 from ding.league.player import PlayerMeta
 from ding.worker.learner.base_learner import BaseLearner
 from typing import TYPE_CHECKING, Callable, Optional
+from threading import Lock
 if TYPE_CHECKING:
     from ding.framework import Task, Context
     from ding.framework.middleware.league_actor import ActorData
@@ -29,11 +30,14 @@ class LeagueLearner:
         self.checkpoint_prefix = cfg.policy.other.league.path_policy
         self._learner = self._get_learner()
         self.task.on("actor_data_player_{}".format(self.player_id), self._on_actor_data)
+        self._lock = Lock()
 
     def _on_actor_data(self, actor_data: "ActorData"):
-        cfg = self.cfg
-        for _ in range(cfg.policy.learn.update_per_collect):
-            self._learner.train(actor_data.train_data, actor_data.env_step)
+        with self._lock:
+            cfg = self.cfg
+            for _ in range(cfg.policy.learn.update_per_collect):
+                self._learner.train(actor_data.train_data, actor_data.env_step)
+
         self.player.total_agent_step = self._learner.train_iter
         checkpoint = self._save_checkpoint() if self.player.is_trained_enough() else None
         self.task.emit(
