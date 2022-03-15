@@ -70,6 +70,9 @@ class LeagueActor:
             self.task.emit("actor_job", job)
 
         def send_actor_data(train_data: List):
+            # Don't send data in evaluation mode
+            if job.is_eval:
+                return
             for d in train_data:
                 d["adv"] = d["reward"]
 

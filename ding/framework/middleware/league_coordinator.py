@@ -33,6 +33,7 @@ class LeagueCoordinator:
             player_num = len(self.league.active_players_ids)
             player_id = self.league.active_players_ids[i % player_num]
             job = self.league.get_job_info(player_id)
+            job.job_no = i
             i += 1
             yield job
 
@@ -41,6 +42,8 @@ class LeagueCoordinator:
 
     def _distribute_job(self, actor_id: str) -> None:
         with self._lock:
-            job = next(self._job_iter)
+            job: "Job" = next(self._job_iter)
+        if job.job_no > 0 and job.job_no % 10 == 0:  # 1/10 turn job into eval mode
+            job.is_eval = True
         job.actor_id = actor_id
         self.task.emit("league_job_actor_{}".format(actor_id), job)

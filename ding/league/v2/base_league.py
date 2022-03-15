@@ -18,7 +18,9 @@ class Job:
     launch_player: str
     players: List["PlayerMeta"]
     result: list = field(default_factory=list)
+    job_no: int = 0  # Serial number of job, not required
     train_iter: int = None
+    is_eval: bool = False
 
 
 class BaseLeague:
