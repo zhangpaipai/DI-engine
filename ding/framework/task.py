@@ -65,6 +65,7 @@ class Task:
             **_
     ) -> None:
         self._finish = False
+        self._running = True
         self.middleware = middleware or []
         self.step_wrappers = step_wrappers or []
         self.ctx = Context()
@@ -150,6 +151,7 @@ class Task:
         Arguments:
             - max_step (:obj:`int`): Max step of iterations.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         if len(self.middleware) == 0:
             return
         for i in range(max_step):
@@ -175,6 +177,7 @@ class Task:
         Arguments:
             - fn (:obj:`Callable`): Function with contain the ctx argument in middleware.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         if not backward_stack:
             backward_stack = self._backward_stack
         if not ctx:
@@ -196,6 +199,7 @@ class Task:
         Overview:
             Execute the rest part of middleware, by the reversed order of registry.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         if not backward_stack:
             backward_stack = self._backward_stack
         while backward_stack:
@@ -215,6 +219,7 @@ class Task:
         Arguments:
             - fn (:obj:`Callable`): Chain a sequence of middleware, wrap them into one middleware function.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
 
         def _sequence(ctx):
             backward_stack = []
@@ -232,6 +237,7 @@ class Task:
         Overview:
             Renew the context instance, this function should be called after backward in the end of iteration.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         # Renew context
         old_ctx = self.ctx
         new_ctx = old_ctx.renew()
@@ -262,6 +268,7 @@ class Task:
         self.step_wrappers.clear()
         self._backward_stack.clear()
         self._async_stack.clear()
+        self._running = False
 
     def sync(self) -> 'Task':
         if self._async_loop:
@@ -305,6 +312,7 @@ class Task:
             - args (:obj:`any`): Rest arguments for listeners.
         """
         # Check if need to broadcast event to connected nodes, default is True
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         if only_local:
             self._event_loop.emit(event, *args, **kwargs)
         elif only_remote:
@@ -360,6 +368,7 @@ class Task:
             - timeout (:obj:`float`): Timeout in seconds.
             - ignore_timeout_exception (:obj:`bool`): If this is False, an exception will occur when meeting timeout.
         """
+        assert self._running, "Please make sure the task is running before calling the this method, see the task.start method"
         received = False
         result = None
 
