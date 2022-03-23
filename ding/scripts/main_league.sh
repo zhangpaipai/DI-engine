@@ -24,6 +24,4 @@ ditask --package $BASEDIR \
   --address 127.0.0.1 \
   --ports 50515 \
   --node-ids 0 \
-  --topology mesh &
-
-sleep 10000
+  --topology mesh
