@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 from ding.torch_utils import ResFCBlock, ResBlock, Flatten, normed_linear, normed_conv2d
-from ding.torch_utils.network.dreamer import Conv2dSame, DreamerLayerNorm
+from ding.torch_utils.network.dreamer import weight_init, Conv2dSame, DreamerLayerNorm
 from ding.utils import SequenceType
 
 
@@ -92,6 +92,7 @@ class ConvEncoder(nn.Module):
             layers.append(ResBlock(self.hidden_size_list[i - 1], activation=self.act, norm_type=norm_type))
         layers.append(Flatten())
         self.main = nn.Sequential(*layers)
+        self.main.apply(weight_init)
 
         flatten_size = self._get_flatten_size()
         self.output_size = hidden_size_list[-1]  # outside to use

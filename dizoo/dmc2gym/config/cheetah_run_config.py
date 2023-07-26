@@ -6,11 +6,11 @@ import torch
 cuda = True
 
 cartpole_balance_dreamer_config = dict(
-    exp_name='dmc2gym_cartpole_balance_dreamer',
+    exp_name='dmc2gym_cheetah_run_dreamer',
     env=dict(
-        env_id='dmc2gym_cartpole_balance',
-        domain_name='cartpole',
-        task_name='balance',
+        env_id='dmc2gym_cheetah_run',
+        domain_name='cheetah',
+        task_name='run',
         frame_skip=1,
         warp_frame=True,
         scale=True,
@@ -30,7 +30,7 @@ cartpole_balance_dreamer_config = dict(
         random_collect_size=2500,  # 5000
         model=dict(
             obs_shape=(3, 64, 64),
-            action_shape=1,
+            action_shape=6,
             actor_dist = 'normal',
         ),
         learn=dict(
@@ -45,7 +45,7 @@ cartpole_balance_dreamer_config = dict(
         collect=dict(
             n_sample=1,
             unroll_len=1,
-            action_size=1,  # has to be specified
+            action_size=6,  # has to be specified
             collect_dyn_sample=True,
         ),
         command=dict(),
@@ -63,7 +63,7 @@ cartpole_balance_dreamer_config = dict(
         cuda=cuda,
         model=dict(
             state_size=(3, 64, 64),  # has to be specified
-            action_size=1,  # has to be specified
+            action_size=6,  # has to be specified
             reward_size=1,
             batch_size=16,
         ),
@@ -91,4 +91,4 @@ cartpole_balance_create_config = dict(
 cartpole_balance_create_config = EasyDict(cartpole_balance_create_config)
 
 if __name__ == '__main__':
-    serial_pipeline_dreamer((cartpole_balance_dreamer_config, cartpole_balance_create_config), seed=0, max_env_step=1000000)
+    serial_pipeline_dreamer((cartpole_balance_dreamer_config, cartpole_balance_create_config), seed=0, max_env_step=500000)

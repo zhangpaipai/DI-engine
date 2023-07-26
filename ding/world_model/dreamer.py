@@ -3,14 +3,14 @@ import copy
 import torch
 from torch import nn
 
-from ding.utils import WORLD_MODEL_REGISTRY
+from ding.utils import WORLD_MODEL_REGISTRY, lists_to_dicts
 from ding.utils.data import default_collate
-from ding.model import ConvEncoder
+#from ding.model import ConvEncoder
 from ding.world_model.base_world_model import WorldModel
 from ding.world_model.model.networks import RSSM, ConvDecoder
 from ding.torch_utils import to_device
-from ding.torch_utils.network.dreamer import DenseHead
-
+from ding.torch_utils.network.dreamer import DenseHead, Optimizer, ConvEncoder
+import random
 
 @WORLD_MODEL_REGISTRY.register('dreamer')
 class DREAMERWorldModel(WorldModel, nn.Module):
@@ -23,7 +23,7 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             model_lr=1e-4,
             reward_size=1,
             hidden_size=200,
-            batch_size=256,
+            batch_size=16,
             max_epochs_since_update=5,
             dyn_stoch=32,
             dyn_deter=512,
@@ -45,9 +45,9 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             encoder_kernels=[4, 4, 4, 4],
             decoder_kernels=[4, 4, 4, 4],
             reward_head='twohot_symlog',
-            kl_lscale=0.1,
-            kl_rscale=0.5,
-            kl_free=1.0,
+            kl_lscale=0.5,  # 0.1
+            kl_rscale=0.1,  # 0.5
+            kl_free=1.0,  # 1.0
             kl_forward=False,
             pred_discount=True,
             dyn_mean_act='none',
@@ -57,6 +57,11 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             dyn_cell='gru_layer_norm',
             unimix_ratio=0.01,
             device='cuda' if torch.cuda.is_available() else 'cpu',
+            opt_eps=1e-8,
+            precision=32,
+            opt='adam',
+            weight_decay=0.0,
+            grad_clip=1000,
         ),
     )
 
@@ -66,6 +71,7 @@ class DREAMERWorldModel(WorldModel, nn.Module):
 
         self.pretrain_flag = True
         self._cfg = cfg.model
+        self._use_amp = True if self._cfg.precision == 16 else False
         #self._cfg.act = getattr(torch.nn, self._cfg.act),
         #self._cfg.norm = getattr(torch.nn, self._cfg.norm),
         self._cfg.act = nn.modules.activation.SiLU  # nn.SiLU
@@ -76,13 +82,21 @@ class DREAMERWorldModel(WorldModel, nn.Module):
         self.hidden_size = self._cfg.hidden_size
         self.batch_size = self._cfg.batch_size
 
+        # self.encoder = ConvEncoder(
+        #     self.state_size,
+        #     hidden_size_list=[32, 64, 128, 256, 4096],  # to last layer 128?
+        #     activation=torch.nn.SiLU(),
+        #     kernel_size=self._cfg.encoder_kernels,
+        #     layer_norm=True
+        # )
         self.encoder = ConvEncoder(
-            self.state_size,
-            hidden_size_list=[32, 64, 128, 256, 4096],  # to last layer 128?
-            activation=torch.nn.SiLU(),
-            kernel_size=self._cfg.encoder_kernels,
-            layer_norm=True
+            False,
+            32,
+            getattr(torch.nn, 'SiLU'),
+            getattr(torch.nn, 'LayerNorm'),
+            [4, 4, 4, 4],
         )
+
         self.embed_size = (
             (self.state_size[1] // 2 ** (len(self._cfg.encoder_kernels))) ** 2 * self._cfg.cnn_depth *
             2 ** (len(self._cfg.encoder_kernels) - 1)
@@ -148,7 +162,17 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             self.cuda()
         # to do
         # grad_clip, weight_decay
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self._cfg.model_lr)
+        # self.optimizer = torch.optim.Adam(self.parameters(), lr=self._cfg.model_lr)
+        self.optimizer = Optimizer(
+            "model",
+            self.parameters(),
+            self._cfg.model_lr,
+            self._cfg.opt_eps,
+            self._cfg.grad_clip,
+            self._cfg.weight_decay,
+            opt=self._cfg.opt,
+            use_amp=self._use_amp,
+        )
 
     def step(self, obs, act):
         pass
@@ -162,19 +186,34 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             return True
         return False
 
-    def train(self, env_buffer, envstep, train_iter, batch_size):
+    def train(self, env_buffer, envstep, train_iter, batch_size, batch_length):
         self.last_train_step = envstep
-        # [len=B, ele={dict_key: [len=T, ele=Tensor(any_dims)]}]
-        data = env_buffer.sample(batch_size, train_iter)
-        data = default_collate(data)  # -> {some_key: T lists}, each list is [B, some_dim]
-        data = {k: torch.stack(data[k], dim=1) for k in data}  # -> {dict_key: Tensor([B, T, any_dims])}
         
-        data['discount'] = 1.0 - data['done'].float()
+        # random.seed(0)
+        # np.random.seed(0)
+        # torch.manual_seed(0)
+        # torch.cuda.manual_seed(0)
+        # [len=B, ele={dict_key: [len=T, ele=Tensor(any_dims)]}]
+        # data = env_buffer.sample(batch_size, train_iter)
+        # data = default_collate(data)  # -> {some_key: T lists}, each list is [B, some_dim]
+        # data = {k: torch.stack(data[k], dim=1) for k in data}  # -> {dict_key: Tensor([B, T, any_dims])}
+        
+        data = env_buffer.sample(batch_size, batch_length, train_iter)  # [len=B, ele=[len=T, ele={dict_key: Tensor(any_dims)}]]
+        data = default_collate(data)  # -> [len=T, ele={dict_key: Tensor(B, any_dims)}]
+        data = lists_to_dicts(data, recursive=True)  # -> {some_key: T lists}, each list is [B, some_dim]
+        data = {k: torch.stack(data[k], dim=1) for k in data}  # -> {dict_key: Tensor([B, T, any_dims])}
+
+        data['discount'] = data.get('discount', 1.0 - data['done'].float())
+        data['discount'] *= 0.997
         data['weight'] = data.get('weight', None)
-        data['image'] = data['obs']
+        data['image'] = data['obs'] - 0.5
         #data['obs'] = data['obs'] / 255.0 - 0.5
         #next_obs = data['next_obs'] / 255.0 - 0.5
         #data = {k: v.to(self._cfg.device) for k, v in data.items()}
+        
+        # data = torch.load('/home/PJLAB/zhangpai/duibi/world_data_origin.pth')
+        # data['image'] = data['image'].permute(0, 1, 4, 2, 3)
+
         data = to_device(data, self._cfg.device)
         if len(data['reward'].shape) == 2:
             data['reward'] = data['reward'].unsqueeze(-1)
@@ -184,59 +223,92 @@ class DREAMERWorldModel(WorldModel, nn.Module):
             data['discount'] = data['discount'].unsqueeze(-1)
 
         self.requires_grad_(requires_grad=True)
+        with torch.cuda.amp.autocast(self._use_amp):
+            image = data['image'].reshape([-1] + list(data['image'].shape[-3:]))
+            embed = self.encoder(image)
+            embed = embed.reshape(list(data['image'].shape[:-3]) + [embed.shape[-1]])
+            post, prior = self.dynamics.observe(embed, data["action"])
+            # torch.save(post, '/home/PJLAB/zhangpai/duibi/post.pth')
+            # torch.save(prior, '/home/PJLAB/zhangpai/duibi/prior.pth')
+            # post = torch.load('/home/PJLAB/zhangpai/duibi/post_origin.pth')
+            # prior = torch.load('/home/PJLAB/zhangpai/duibi/prior_origin.pth')
+            post = to_device(post, self._cfg.device)
+            prior = to_device(prior, self._cfg.device)
+            kl_loss, kl_value, loss_lhs, loss_rhs = self.dynamics.kl_loss(
+                post, prior, self._cfg.kl_forward, self._cfg.kl_free, self._cfg.kl_lscale, self._cfg.kl_rscale
+            )
+            losses = {}
+            likes = {}
+            for name, head in self.heads.items():
+                grad_head = name in self._cfg.grad_heads
+                feat = self.dynamics.get_feat(post)
+                feat = feat if grad_head else feat.detach()
+                pred = head(feat)
+                like = pred.log_prob(data[name])
+                likes[name] = like
+                losses[name] = -torch.mean(like)
+            model_loss = sum(losses.values()) + kl_loss
 
-        image = data['obs'].reshape([-1] + list(data['obs'].shape[-3:]))
-        embed = self.encoder(image)
-        embed = embed.reshape(list(data['obs'].shape[:-3]) + [embed.shape[-1]])
-        
-        post, prior = self.dynamics.observe(embed, data["action"])
-        kl_loss, kl_value, loss_lhs, loss_rhs = self.dynamics.kl_loss(
-            post, prior, self._cfg.kl_forward, self._cfg.kl_free, self._cfg.kl_lscale, self._cfg.kl_rscale
-        )
-        losses = {}
-        likes = {}
-        for name, head in self.heads.items():
-            grad_head = name in self._cfg.grad_heads
-            feat = self.dynamics.get_feat(post)
-            feat = feat if grad_head else feat.detach()
-            pred = head(feat)
-            like = pred.log_prob(data[name])
-            likes[name] = like
-            losses[name] = -torch.mean(like)
-        model_loss = sum(losses.values()) + kl_loss
-
-        # ====================
-        # world model update
-        # ====================
-        self.optimizer.zero_grad()
-        model_loss.backward()
-        self.optimizer.step()
+            # losses_origin = torch.load('/home/PJLAB/zhangpai/duibi/losses_origin.pth')
+            # cha = {}
+            # for k, v in losses_origin.items():
+            #     cha[k] = (losses[k]-v).abs()
+            # torch.save(losses, '/home/PJLAB/zhangpai/duibi/losses.pth')
+            
+            # # ====================
+            # # world model update
+            # # ====================
+            # self.optimizer.zero_grad()
+            # model_loss.backward()
+            # self.optimizer.step()
+        metrics = self.optimizer(model_loss, self.parameters())
         
         self.requires_grad_(requires_grad=False)
-        # log
-        if self.tb_logger is not None:
-            for name, loss in losses.items():
-                self.tb_logger.add_scalar(name + '_loss', loss.detach().cpu().numpy().item(), envstep)
-        self.tb_logger.add_scalar('kl_free', self._cfg.kl_free, envstep)
-        self.tb_logger.add_scalar('kl_lscale', self._cfg.kl_lscale, envstep)
-        self.tb_logger.add_scalar('kl_rscale', self._cfg.kl_rscale, envstep)
-        self.tb_logger.add_scalar('loss_lhs', loss_lhs.detach().cpu().numpy().item(), envstep)
-        self.tb_logger.add_scalar('loss_rhs', loss_rhs.detach().cpu().numpy().item(), envstep)
-        self.tb_logger.add_scalar('kl', torch.mean(kl_value).detach().cpu().numpy().item(), envstep)
 
-        prior_ent = torch.mean(self.dynamics.get_dist(prior).entropy()).detach().cpu().numpy()
-        post_ent = torch.mean(self.dynamics.get_dist(post).entropy()).detach().cpu().numpy()
+        # # log
+        # if self.tb_logger is not None:
+        #     for name, loss in losses.items():
+        #         self.tb_logger.add_scalar(name + '_loss', loss.detach().cpu().numpy().item(), envstep)
+        # self.tb_logger.add_scalar('kl_free', self._cfg.kl_free, envstep)
+        # self.tb_logger.add_scalar('kl_lscale', self._cfg.kl_lscale, envstep)
+        # self.tb_logger.add_scalar('kl_rscale', self._cfg.kl_rscale, envstep)
+        # self.tb_logger.add_scalar('loss_lhs', loss_lhs.detach().cpu().numpy().item(), envstep)
+        # self.tb_logger.add_scalar('loss_rhs', loss_rhs.detach().cpu().numpy().item(), envstep)
+        # self.tb_logger.add_scalar('kl', torch.mean(kl_value).detach().cpu().numpy().item(), envstep)
 
-        self.tb_logger.add_scalar('prior_ent', prior_ent.item(), envstep)
-        self.tb_logger.add_scalar('post_ent', post_ent.item(), envstep)
+        # prior_ent = torch.mean(self.dynamics.get_dist(prior).entropy()).detach().cpu().numpy()
+        # post_ent = torch.mean(self.dynamics.get_dist(post).entropy()).detach().cpu().numpy()
 
-        context = dict(
-            embed=embed,
-            feat=self.dynamics.get_feat(post),
-            kl=kl_value,
-            postent=self.dynamics.get_dist(post).entropy(),
-        )
+        # self.tb_logger.add_scalar('prior_ent', prior_ent.item(), envstep)
+        # self.tb_logger.add_scalar('post_ent', post_ent.item(), envstep)
+
+        # context = dict(
+        #     embed=embed,
+        #     feat=self.dynamics.get_feat(post),
+        #     kl=kl_value,
+        #     postent=self.dynamics.get_dist(post).entropy(),
+        # )
+        metrics.update({f"{name}_loss": loss.detach().cpu().numpy().item() for name, loss in losses.items()})
+        metrics["kl_free"] = self._cfg.kl_free
+        metrics["kl_lscale"] = self._cfg.kl_lscale
+        metrics["kl_rscale"] = self._cfg.kl_rscale
+        metrics["loss_lhs"] = loss_lhs.detach().cpu().numpy().item()
+        metrics["loss_rhs"] = loss_rhs.detach().cpu().numpy().item()
+        metrics["kl"] = torch.mean(kl_value).detach().cpu().numpy().item()
+        with torch.cuda.amp.autocast(self._use_amp):
+            metrics["prior_ent"] = torch.mean(self.dynamics.get_dist(prior).entropy()).detach().cpu().numpy()
+            metrics["post_ent"] = torch.mean(self.dynamics.get_dist(post).entropy()).detach().cpu().numpy()
+            context = dict(
+                embed=embed,
+                feat=self.dynamics.get_feat(post),
+                kl=kl_value,
+                postent=self.dynamics.get_dist(post).entropy(),
+            )
         post = {k: v.detach() for k, v in post.items()}
+        if self.tb_logger is not None:
+            for k, v in metrics.items():
+                self.tb_logger.add_scalar(k, v, envstep)
+
         return post, context
 
     def _save_states(self, ):

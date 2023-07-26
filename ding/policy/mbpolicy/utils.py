@@ -62,7 +62,8 @@ def imagine(cfg, world_model, start, actor, horizon, repeats=None):
 def compute_target(cfg, world_model, critic, imag_feat, imag_state, reward, actor_ent, state_ent):
     if "discount" in world_model.heads:
         inp = world_model.dynamics.get_feat(imag_state)
-        discount = cfg.discount * world_model.heads["discount"](inp).mean
+        #discount = cfg.discount * world_model.heads["discount"](inp).mean
+        discount = world_model.heads["discount"](inp).mean
         # TODO whether to detach
         discount = discount.detach()
     else:
@@ -72,7 +73,15 @@ def compute_target(cfg, world_model, critic, imag_feat, imag_state, reward, acto
     # value(imag_horizon, 16*64, 1)
     # action(imag_horizon, 16*64, ch)
     # discount(imag_horizon, 16*64, 1)
-    target = generalized_lambda_returns(value, reward[:-1], discount[:-1], cfg.lambda_)
+    target = lambda_return(
+            reward[:-1],
+            value[:-1],
+            discount[:-1],
+            bootstrap=value[-1],
+            lambda_=cfg.lambda_,
+            axis=0,
+        )
+    #target = generalized_lambda_returns(value, reward[:-1], discount[:-1], cfg.lambda_)
     weights = torch.cumprod(torch.cat([torch.ones_like(discount[:1]), discount[:-1]], 0), 0).detach()
     return target, weights, value[:-1]
 
@@ -95,7 +104,7 @@ def compute_actor_loss(
     policy = actor(inp)
     actor_ent = policy.entropy()
     # Q-val for actor is not transformed using symlog
-    # target = torch.stack(target, dim=1)
+    target = torch.stack(target, dim=1)
     if cfg.reward_EMA:
         offset, scale = reward_ema(target)
         normed_target = (target - offset) / scale
@@ -147,3 +156,51 @@ def tensorstats(tensor, prefix=None):
     if prefix:
         metrics = {f'{prefix}_{k}': v.item() for k, v in metrics.items()}
     return metrics
+
+def static_scan_for_lambda_return(fn, inputs, start):
+    last = start
+    indices = range(inputs[0].shape[0])
+    indices = reversed(indices)
+    flag = True
+    for index in indices:
+        # (inputs, pcont) -> (inputs[index], pcont[index])
+        inp = lambda x: (_input[x] for _input in inputs)
+        last = fn(last, *inp(index))
+        if flag:
+            outputs = last
+            flag = False
+        else:
+            outputs = torch.cat([outputs, last], dim=-1)
+    outputs = torch.reshape(outputs, [outputs.shape[0], outputs.shape[1], 1])
+    outputs = torch.flip(outputs, [1])
+    outputs = torch.unbind(outputs, dim=0)
+    return outputs
+
+
+def lambda_return(reward, value, pcont, bootstrap, lambda_, axis):
+    # Setting lambda=1 gives a discounted Monte Carlo return.
+    # Setting lambda=0 gives a fixed 1-step return.
+    # assert reward.shape.ndims == value.shape.ndims, (reward.shape, value.shape)
+    assert len(reward.shape) == len(value.shape), (reward.shape, value.shape)
+    if isinstance(pcont, (int, float)):
+        pcont = pcont * torch.ones_like(reward)
+    dims = list(range(len(reward.shape)))
+    dims = [axis] + dims[1:axis] + [0] + dims[axis + 1 :]
+    if axis != 0:
+        reward = reward.permute(dims)
+        value = value.permute(dims)
+        pcont = pcont.permute(dims)
+    if bootstrap is None:
+        bootstrap = torch.zeros_like(value[-1])
+    next_values = torch.cat([value[1:], bootstrap[None]], 0)
+    inputs = reward + pcont * next_values * (1 - lambda_)
+    # returns = static_scan(
+    #    lambda agg, cur0, cur1: cur0 + cur1 * lambda_ * agg,
+    #    (inputs, pcont), bootstrap, reverse=True)
+    # reimplement to optimize performance
+    returns = static_scan_for_lambda_return(
+        lambda agg, cur0, cur1: cur0 + cur1 * lambda_ * agg, (inputs, pcont), bootstrap
+    )
+    if axis != 0:
+        returns = returns.permute(dims)
+    return returns

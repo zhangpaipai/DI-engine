@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import distributions as torchd
 
 from ding.torch_utils.network.dreamer import weight_init, uniform_weight_init, OneHotDist, ContDist, SymlogDist, static_scan, DreamerLayerNorm
-
+import random
 
 class RSSM(nn.Module):
 
@@ -52,6 +52,10 @@ class RSSM(nn.Module):
         self._embed = embed
         self._device = device
 
+        #random.seed(0)
+        #np.random.seed(0)
+        #torch.manual_seed(0)
+        #torch.cuda.manual_seed(0)
         inp_layers = []
         if self._discrete:
             inp_dim = self._stoch * self._discrete + num_actions

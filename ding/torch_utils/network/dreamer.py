@@ -66,22 +66,32 @@ class DenseHead(nn.Module):
             self._shape = (1, )
         self._layer_num = layer_num
         self._units = units
-        self._act = getattr(torch.nn, act)()
-        self._norm = norm
+        act = getattr(torch.nn, act)
+        norm = getattr(torch.nn, 'LayerNorm')
+        #self._act = getattr(torch.nn, act)()
+        #self._norm = norm
         self._dist = dist
         self._std = std
         self._device = device
 
-        self.mlp = MLP(
-            inp_dim,
-            self._units,
-            self._units,
-            self._layer_num,
-            layer_fn=nn.Linear,
-            activation=self._act,
-            norm_type=self._norm
-        )
-        self.mlp.apply(weight_init)
+        # self.mlp = MLP(
+        #     inp_dim,
+        #     self._units,
+        #     self._units,
+        #     self._layer_num,
+        #     layer_fn=nn.Linear,
+        #     activation=self._act,
+        #     norm_type=self._norm
+        # )
+        layers = []
+        for index in range(self._layer_num):
+            layers.append(nn.Linear(inp_dim, self._units, bias=False))
+            layers.append(norm(units, eps=1e-03))
+            layers.append(act())
+            if index == 0:
+                inp_dim = units
+        self.layers = nn.Sequential(*layers)
+        self.layers.apply(weight_init)
 
         self.mean_layer = nn.Linear(self._units, np.prod(self._shape))
         self.mean_layer.apply(uniform_weight_init(outscale))
@@ -92,7 +102,7 @@ class DenseHead(nn.Module):
 
     def forward(self, features, dtype=None):
         x = features
-        out = self.mlp(x)  # (batch, time, _units=512)
+        out = self.layers(x)  # (batch, time, _units=512)
         mean = self.mean_layer(out)  # (batch, time, 255)
         if self._std == "learned":
             std = self.std_layer(out)
@@ -529,3 +539,109 @@ def uniform_weight_init(given_scale):
                 m.bias.data.fill_(0.0)
 
     return f
+
+class Optimizer:
+    def __init__(
+        self,
+        name,
+        parameters,
+        lr,
+        eps=1e-4,
+        clip=None,
+        wd=None,
+        wd_pattern=r".*",
+        opt="adam",
+        use_amp=False,
+    ):
+        assert 0 <= wd < 1
+        assert not clip or 1 <= clip
+        self._name = name
+        self._parameters = parameters
+        self._clip = clip
+        self._wd = wd
+        self._wd_pattern = wd_pattern
+        self._opt = {
+            "adam": lambda: torch.optim.Adam(parameters, lr=lr, eps=eps),
+            "nadam": lambda: NotImplemented(f"{opt} is not implemented"),
+            "adamax": lambda: torch.optim.Adamax(parameters, lr=lr, eps=eps),
+            "sgd": lambda: torch.optim.SGD(parameters, lr=lr),
+            "momentum": lambda: torch.optim.SGD(parameters, lr=lr, momentum=0.9),
+        }[opt]()
+        self._scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+    def __call__(self, loss, params, retain_graph=False):
+        assert len(loss.shape) == 0, loss.shape
+        metrics = {}
+        metrics[f"{self._name}_loss"] = loss.detach().cpu().numpy().item()
+        self._scaler.scale(loss).backward()
+        self._scaler.unscale_(self._opt)
+        # loss.backward(retain_graph=retain_graph)
+        norm = torch.nn.utils.clip_grad_norm_(params, self._clip)
+        if self._wd:
+            self._apply_weight_decay(params)
+        self._scaler.step(self._opt)
+        self._scaler.update()
+        # self._opt.step()
+        self._opt.zero_grad()
+        metrics[f"{self._name}_grad_norm"] = norm.item()
+        return metrics
+    
+    def _apply_weight_decay(self, varibs):
+        nontrivial = self._wd_pattern != r".*"
+        if nontrivial:
+            raise NotImplementedError
+        for var in varibs:
+            var.data = (1 - self._wd) * var.data
+
+
+class ConvEncoder(nn.Module):
+    def __init__(
+        self,
+        grayscale=False,
+        depth=32,
+        act=nn.ELU,
+        norm=nn.LayerNorm,
+        kernels=(3, 3, 3, 3),
+    ):
+        super(ConvEncoder, self).__init__()
+        self._act = act
+        self._norm = norm
+        self._depth = depth
+        self._kernels = kernels
+        h, w = 64, 64
+        layers = []
+        for i, kernel in enumerate(self._kernels):
+            if i == 0:
+                if grayscale:
+                    inp_dim = 1
+                else:
+                    inp_dim = 3
+            else:
+                inp_dim = 2 ** (i - 1) * self._depth
+            depth = 2**i * self._depth
+            layers.append(
+                Conv2dSame(
+                    in_channels=inp_dim,
+                    out_channels=depth,
+                    kernel_size=(kernel, kernel),
+                    stride=(2, 2),
+                    bias=False,
+                )
+            )
+            layers.append(DreamerLayerNorm(depth))
+            layers.append(act())
+            h, w = h // 2, w // 2
+
+        self.layers = nn.Sequential(*layers)
+        self.layers.apply(weight_init)
+
+    def __call__(self, obs):
+        #x = obs["image"].reshape((-1,) + tuple(obs["image"].shape[-3:]))
+        x = obs.reshape((-1,) + tuple(obs.shape[-3:]))
+        #x = x.permute(0, 3, 1, 2)
+        x = self.layers(x)
+        # prod: product of all elements
+        x = x.reshape([x.shape[0], np.prod(x.shape[1:])])
+        #shape = list(obs.shape[:-3]) + [x.shape[-1]]
+        #return x.reshape(shape)
+        return x

@@ -12,6 +12,7 @@ from ding.model import model_wrap
 from ding.policy.common_utils import default_preprocess_learn
 
 from .utils import imagine, compute_target, compute_actor_loss, RewardEMA, tensorstats
+from ding.torch_utils.network.dreamer import Optimizer
 
 
 @POLICY_REGISTRY.register('dreamer')
@@ -32,10 +33,19 @@ class DREAMERPolicy(Policy):
             lambda_=0.95,
             # (float) Max norm of gradients.
             grad_clip=100,
-            learning_rate=0.001,
-            batch_size=256,
+            learning_rate=3e-5,
+            ac_opt_eps=1e-5,
+            precision=32,
+            opt='adam',
+            weight_decay=0.0,
+            value_grad_clip=100,
+            actor_grad_clip=100,
+            batch_size=16,
+            batch_length=64,
             imag_sample=True,
             slow_value_target=True,
+            slow_target_update=1,
+            slow_target_fraction=0.02,
             discount=0.997,
             reward_EMA=True,
             actor_entropy=3e-4,
@@ -54,6 +64,7 @@ class DREAMERPolicy(Policy):
             Init the optimizer, algorithm config, main and target models.
         """
         # Algorithm config
+        self._use_amp = True if self._cfg.learn.precision == 16 else False
         self._lambda = self._cfg.learn.lambda_
         self._grad_clip = self._cfg.learn.grad_clip
 
@@ -64,14 +75,32 @@ class DREAMERPolicy(Policy):
             self._slow_value = deepcopy(self._critic)
             self._updates = 0
 
-        # Optimizer
-        self._optimizer_value = Adam(
-            self._critic.parameters(),
-            lr=self._cfg.learn.learning_rate,
-        )
-        self._optimizer_actor = Adam(
+        # # Optimizer
+        # self._optimizer_value = Adam(
+        #     self._critic.parameters(),
+        #     lr=self._cfg.learn.learning_rate,
+        # )
+        # self._optimizer_actor = Adam(
+        #     self._actor.parameters(),
+        #     lr=self._cfg.learn.learning_rate,
+        # )
+        
+        kw = dict(wd=self._cfg.learn.weight_decay, opt=self._cfg.learn.opt, use_amp=self._use_amp)
+        self._optimizer_actor = Optimizer(
+            "actor",
             self._actor.parameters(),
-            lr=self._cfg.learn.learning_rate,
+            self._cfg.learn.learning_rate,
+            self._cfg.learn.ac_opt_eps,
+            self._cfg.learn.actor_grad_clip,
+            **kw,
+        )
+        self._optimizer_value = Optimizer(
+            "critic",
+            self._critic.parameters(),
+            self._cfg.learn.learning_rate,
+            self._cfg.learn.ac_opt_eps,
+            self._cfg.learn.value_grad_clip,
+            **kw,
         )
 
         self._learn_model = model_wrap(self._model, wrapper_name='base')
@@ -86,54 +115,71 @@ class DREAMERPolicy(Policy):
         # log dict
         log_vars = {}
         self._learn_model.train()
-        
-        self._actor.requires_grad_(requires_grad=True)
+        self._update_slow_target()
+
+        start = {k: v[:-1] for k, v in start.items()}
         # start is dict of {stoch, deter, logit}
+
+        # world_model.load_state_dict(torch.load('/home/PJLAB/zhangpai/duibi/world_model_origin.pth', map_location=self._device))
+        # start = torch.load('/home/PJLAB/zhangpai/duibi/start_origin.pth')
+
         if self._cuda:
             start = to_device(start, self._device)
-
+        
+        self._actor.requires_grad_(requires_grad=True)
         # train self._actor
-        imag_feat, imag_state, imag_action = imagine(
-            self._cfg.learn, world_model, start, self._actor, self._cfg.imag_horizon
-        )
-        reward = world_model.heads["reward"](world_model.dynamics.get_feat(imag_state)).mode()
-        actor_ent = self._actor(imag_feat).entropy()
-        state_ent = world_model.dynamics.get_dist(imag_state).entropy()
-        # this target is not scaled
-        # slow is flag to indicate whether slow_target is used for lambda-return
-        target, weights, base = compute_target(
-            self._cfg.learn, world_model, self._critic, imag_feat, imag_state, reward, actor_ent, state_ent
-        )
-        actor_loss, mets = compute_actor_loss(
-            self._cfg.learn,
-            self._actor,
-            self.reward_ema,
-            imag_feat,
-            imag_state,
-            imag_action,
-            target,
-            actor_ent,
-            state_ent,
-            weights,
-            base,
-        )
-        log_vars.update(mets)
-        value_input = imag_feat
+        with torch.cuda.amp.autocast(self._use_amp):
+            imag_feat, imag_state, imag_action = imagine(
+                self._cfg.learn, world_model, start, self._actor, self._cfg.imag_horizon
+            )
+            # torch.save(imag_feat, '/home/PJLAB/zhangpai/duibi/imag_feat.pth')
+            # torch.save(imag_state, '/home/PJLAB/zhangpai/duibi/imag_state.pth')
+            # torch.save(imag_action, '/home/PJLAB/zhangpai/duibi/imag_action.pth')
+            # imag_feat = torch.load('imag_feat_origin.pth')
+            # imag_state = torch.load('imag_state_origin.pth')
+            # imag_action = torch.load('imag_action_origin.pth')
+            imag_feat = to_device(imag_feat, self._device)
+            imag_state = to_device(imag_state, self._device)
+            imag_action = to_device(imag_action, self._device)
+            reward = world_model.heads["reward"](world_model.dynamics.get_feat(imag_state)).mode()
+            actor_ent = self._actor(imag_feat).entropy()
+            state_ent = world_model.dynamics.get_dist(imag_state).entropy()
+            # this target is not scaled
+            # slow is flag to indicate whether slow_target is used for lambda-return
+            target, weights, base = compute_target(
+                self._cfg.learn, world_model, self._critic, imag_feat, imag_state, reward, actor_ent, state_ent
+            )
+            actor_loss, mets = compute_actor_loss(
+                self._cfg.learn,
+                self._actor,
+                self.reward_ema,
+                imag_feat,
+                imag_state,
+                imag_action,
+                target,
+                actor_ent,
+                state_ent,
+                weights,
+                base,
+            )
+            log_vars.update(mets)
+            value_input = imag_feat
         self._actor.requires_grad_(requires_grad=False)
 
         self._critic.requires_grad_(requires_grad=True)
-        value = self._critic(value_input[:-1].detach())
-        # to do
-        # target = torch.stack(target, dim=1)
-        # (time, batch, 1), (time, batch, 1) -> (time, batch)
-        value_loss = -value.log_prob(target.detach())
-        slow_target = self._slow_value(value_input[:-1].detach())
-        if self._cfg.learn.slow_value_target:
-            value_loss = value_loss - value.log_prob(slow_target.mode().detach())
-        if self._cfg.learn.value_decay:
-            value_loss += self._cfg.learn.value_decay * value.mode()
-        # (time, batch, 1), (time, batch, 1) -> (1,)
-        value_loss = torch.mean(weights[:-1] * value_loss[:, :, None])
+        with torch.cuda.amp.autocast(self._use_amp):
+            value = self._critic(value_input[:-1].detach())
+            # to do
+            target = torch.stack(target, dim=1)
+            # (time, batch, 1), (time, batch, 1) -> (time, batch)
+            value_loss = -value.log_prob(target.detach())
+            slow_target = self._slow_value(value_input[:-1].detach())
+            if self._cfg.learn.slow_value_target:
+                value_loss = value_loss - value.log_prob(slow_target.mode().detach())
+            if self._cfg.learn.value_decay:
+                value_loss += self._cfg.learn.value_decay * value.mode()
+            # (time, batch, 1), (time, batch, 1) -> (1,)
+            value_loss = torch.mean(weights[:-1] * value_loss[:, :, None])
         self._critic.requires_grad_(requires_grad=False)
 
         log_vars.update(tensorstats(value.mode(), "value"))
@@ -147,12 +193,16 @@ class DREAMERPolicy(Policy):
         self._model.requires_grad_(requires_grad=True)
         world_model.requires_grad_(requires_grad=True)
 
-        loss_dict = {
-            'critic_loss': value_loss,
-            'actor_loss': actor_loss,
-        }
+        # loss_dict = {
+        #     'critic_loss': value_loss,
+        #     'actor_loss': actor_loss,
+        # }
 
-        norm_dict = self._update(loss_dict)
+        # norm_dict = self._update(loss_dict)
+        # torch.save(value_loss, '/home/PJLAB/zhangpai/duibi/value_loss.pth')
+        # torch.save(actor_loss, '/home/PJLAB/zhangpai/duibi/actor_loss.pth')
+        log_vars.update(self._optimizer_actor(actor_loss, self._model.actor.parameters()))
+        log_vars.update(self._optimizer_value(value_loss, self._model.critic.parameters()))
 
         self._model.requires_grad_(requires_grad=False)
         world_model.requires_grad_(requires_grad=False)
@@ -161,11 +211,12 @@ class DREAMERPolicy(Policy):
         # =============
         self._forward_learn_cnt += 1
 
-        return {
-            **log_vars,
-            **norm_dict,
-            **loss_dict,
-        }
+        # return {
+        #     **log_vars,
+        #     **norm_dict,
+        #     **loss_dict,
+        # }
+        return log_vars
 
     def _update(self, loss_dict):
         # update actor
@@ -180,11 +231,19 @@ class DREAMERPolicy(Policy):
         self._optimizer_value.step()
         return {'actor_grad_norm': actor_norm, 'critic_grad_norm': critic_norm}
 
+    def _update_slow_target(self):
+        if self._cfg.learn.slow_value_target:
+            if self._updates % self._cfg.learn.slow_target_update == 0:
+                mix = self._cfg.learn.slow_target_fraction
+                for s, d in zip(self._critic.parameters(), self._slow_value.parameters()):
+                    d.data = mix * s.data + (1 - mix) * d.data
+            self._updates += 1
+    
     def _state_dict_learn(self) -> Dict[str, Any]:
         ret = {
             'model': self._learn_model.state_dict(),
-            'optimizer_value': self._optimizer_value.state_dict(),
-            'optimizer_actor': self._optimizer_actor.state_dict(),
+            #'optimizer_value': self._optimizer_value.state_dict(),
+            #'optimizer_actor': self._optimizer_actor.state_dict(),
         }
         return ret
 
@@ -225,7 +284,7 @@ class DREAMERPolicy(Policy):
                 for i in range(len(action)):
                     action[i] *= mask[i]
         
-        #data = data / 255.0 - 0.5
+        data = data - 0.5
         embed = world_model.encoder(data)
         latent, _ = world_model.dynamics.obs_step(
             latent, action, embed, self._cfg.collect.collect_dyn_sample
@@ -265,6 +324,7 @@ class DREAMERPolicy(Policy):
             # TODO(zp) random_collect just have action
             #'logprob': model_output['logprob'],
             'reward': timestep.reward,
+            'discount': timestep.info['discount'],
             'done': timestep.done,
         }
         return transition
@@ -303,7 +363,7 @@ class DREAMERPolicy(Policy):
                 for i in range(len(action)):
                     action[i] *= mask[i]
         
-        #data = data / 255.0 - 0.5
+        data = data - 0.5
         embed = world_model.encoder(data)
         latent, _ = world_model.dynamics.obs_step(
             latent, action, embed, self._cfg.collect.collect_dyn_sample
